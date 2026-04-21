@@ -1310,8 +1310,27 @@ toggleEl.addEventListener('click', async () => {
   }
 });
 
-// Pre-fetch count
-getVinylsForCountry(name).then(v => { countEl.textContent = v.length; }).catch(()=>{countEl.textContent='?';});
+// Pre-fetch count + trigger full load immediately for debug
+getVinylsForCountry(name).then(v => {
+  countEl.textContent = v.length;
+  if(v.length > 0) {
+    // Auto-show if there are vinyls
+    listEl.classList.add('open');
+    chevronEl.classList.add('open');
+    vinylsLoaded = true;
+    listEl.innerHTML = v.map(vinyl => `
+      <div class="vinyl-item">
+        <div class="vinyl-cover">
+          ${vinyl.cover ? `<img src="${vinyl.cover}" loading="lazy"/>` : '<div class="vinyl-cover-placeholder">🖤</div>'}
+        </div>
+        <div class="vinyl-info">
+          <div class="vinyl-title">${vinyl.title}</div>
+          <div class="vinyl-artist">${vinyl.artist}</div>
+          <div class="vinyl-year">${vinyl.year || ''}</div>
+        </div>
+      </div>`).join('');
+  }
+}).catch(e => { console.error('Discogs error:', e); countEl.textContent='?'; });
   svgEl.selectAll(".country").attr("fill",d=>d.properties.name===selectedCountry?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.06)");
 }
 
@@ -1937,10 +1956,8 @@ async function fetchDiscogsCollection() {
   if (discogsCache) return discogsCache;
   let all = [], page = 1, pages = 1;
   while (page <= pages) {
-    const res = await fetch(
-      `https://api.discogs.com/users/${DISCOGS_USER}/collection/folders/0/releases?token=${DISCOGS_TOKEN}&per_page=100&page=${page}`,
-      { headers: { "User-Agent": "CarteSON/1.0" } }
-    );
+    const apiUrl = `https://api.discogs.com/users/${DISCOGS_USER}/collection/folders/0/releases?token=${DISCOGS_TOKEN}&per_page=100&page=${page}`;
+    const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(apiUrl)}`);
     const data = await res.json();
     pages = data.pagination.pages;
     all = all.concat(data.releases);
