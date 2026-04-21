@@ -458,6 +458,84 @@ body { cursor: default; }
     font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
     color: rgba(255,255,255,0.4);
   }
+
+  /* VINYL COLLECTION */
+  .vinyl-section {
+    margin-top: 10px;
+    border-top: 0.5px solid rgba(255,255,255,0.07);
+    padding-top: 10px;
+  }
+  .vinyl-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; padding: 8px 0;
+    transition: opacity 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .vinyl-toggle:hover { opacity: 0.7; }
+  .vinyl-toggle-left {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .vinyl-icon {
+    width: 18px; height: 18px; flex-shrink: 0;
+    opacity: 0.6;
+  }
+  .vinyl-toggle-label {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+  }
+  .vinyl-count {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 13px; letter-spacing: 0.05em;
+    color: rgba(255,255,255,0.5);
+  }
+  .vinyl-chevron {
+    font-size: 10px; color: rgba(255,255,255,0.25);
+    transition: transform 0.2s;
+  }
+  .vinyl-chevron.open { transform: rotate(180deg); }
+  .vinyl-list {
+    display: none; flex-direction: column; gap: 8px;
+    padding-bottom: 4px;
+  }
+  .vinyl-list.open { display: flex; }
+  .vinyl-item {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .vinyl-cover {
+    width: 42px; height: 42px; border-radius: 4px;
+    background: rgba(255,255,255,0.05);
+    flex-shrink: 0; overflow: hidden;
+    border: 0.5px solid rgba(255,255,255,0.08);
+  }
+  .vinyl-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .vinyl-cover-placeholder {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  .vinyl-info { flex: 1; min-width: 0; text-align: right; }
+  .vinyl-title {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px; color: rgba(255,255,255,0.85);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    letter-spacing: 0.02em;
+  }
+  .vinyl-artist {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px; color: rgba(255,255,255,0.35);
+    letter-spacing: 0.02em; margin-top: 1px;
+  }
+  .vinyl-year {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 11px; color: rgba(255,255,255,0.2);
+    letter-spacing: 0.05em; margin-top: 1px;
+  }
+  .vinyl-loading {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px; color: rgba(255,255,255,0.2);
+    letter-spacing: 0.06em; text-align: center; padding: 8px 0;
+  }
 </style>
 </head>
 <body>
@@ -1179,7 +1257,61 @@ function showCountry(name){
     </div>`;
   }
   const links = playerHTML;
-  infoDesktop.innerHTML=`<div class="country-header"><div class="country-name">${name}</div><span class="flag">${FLAGS[name] || ""}</span></div><div class="music-desc">${c.desc}</div>${links}`;
+  infoDesktop.innerHTML=`<div class="country-header"><div class="country-name">${name}</div><span class="flag">${FLAGS[name] || ""}</span></div><div class="music-desc">${c.desc}</div>${links}<div class="vinyl-section">
+    <div class="vinyl-toggle" id="vinyl-toggle-${name.replace(/\s/g,'_')}">
+      <div class="vinyl-toggle-left">
+        <svg class="vinyl-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" stroke="white" stroke-width="1.2" opacity="0.6"/><circle cx="12" cy="12" r="4" stroke="white" stroke-width="1.2" opacity="0.6"/><circle cx="12" cy="12" r="1.5" fill="white" opacity="0.6"/></svg>
+        <span class="vinyl-toggle-label">Vinyles</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="vinyl-count" id="vinyl-count-${name.replace(/\s/g,'_')}">…</span>
+        <span class="vinyl-chevron" id="vinyl-chevron-${name.replace(/\s/g,'_')}">▾</span>
+      </div>
+    </div>
+    <div class="vinyl-list" id="vinyl-list-${name.replace(/\s/g,'_')}">
+      <div class="vinyl-loading">chargement…</div>
+    </div>
+  </div>`;
+
+// Load vinyls async
+const safeN = name.replace(/\s/g,'_');
+const toggleEl  = document.getElementById('vinyl-toggle-' + safeN);
+const listEl    = document.getElementById('vinyl-list-' + safeN);
+const countEl   = document.getElementById('vinyl-count-' + safeN);
+const chevronEl = document.getElementById('vinyl-chevron-' + safeN);
+let vinylsLoaded = false;
+
+toggleEl.addEventListener('click', async () => {
+  listEl.classList.toggle('open');
+  chevronEl.classList.toggle('open');
+  if (!vinylsLoaded) {
+    vinylsLoaded = true;
+    try {
+      const vinyls = await getVinylsForCountry(name);
+      countEl.textContent = vinyls.length;
+      if (vinyls.length === 0) {
+        listEl.innerHTML = '<div class="vinyl-loading">aucun vinyle</div>';
+      } else {
+        listEl.innerHTML = vinyls.map(v => `
+          <div class="vinyl-item">
+            <div class="vinyl-cover">
+              ${v.cover ? `<img src="${v.cover}" loading="lazy"/>` : '<div class="vinyl-cover-placeholder">🖤</div>'}
+            </div>
+            <div class="vinyl-info">
+              <div class="vinyl-title">${v.title}</div>
+              <div class="vinyl-artist">${v.artist}</div>
+              <div class="vinyl-year">${v.year || ''}</div>
+            </div>
+          </div>`).join('');
+      }
+    } catch(e) {
+      listEl.innerHTML = '<div class="vinyl-loading">erreur de chargement</div>';
+    }
+  }
+});
+
+// Pre-fetch count
+getVinylsForCountry(name).then(v => { countEl.textContent = v.length; }).catch(()=>{countEl.textContent='?';});
   svgEl.selectAll(".country").attr("fill",d=>d.properties.name===selectedCountry?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.06)");
 }
 
@@ -1794,6 +1926,61 @@ document.addEventListener("keydown", e => {
     }
   }
 });
+
+
+// ── DISCOGS CONFIG ────────────────────────────────────────────────────────────
+const DISCOGS_USER  = "itsLEPE";
+const DISCOGS_TOKEN = "yioBldDgYppeBcaesrdNdXPTPFYHZgDYOjqxObpf";
+let discogsCache = null; // full collection cache
+
+async function fetchDiscogsCollection() {
+  if (discogsCache) return discogsCache;
+  let all = [], page = 1, pages = 1;
+  while (page <= pages) {
+    const res = await fetch(
+      `https://api.discogs.com/users/${DISCOGS_USER}/collection/folders/0/releases?token=${DISCOGS_TOKEN}&per_page=100&page=${page}`,
+      { headers: { "User-Agent": "CarteSON/1.0" } }
+    );
+    const data = await res.json();
+    pages = data.pagination.pages;
+    all = all.concat(data.releases);
+    page++;
+  }
+  discogsCache = all;
+  return all;
+}
+
+// Map Discogs country names to our COUNTRIES keys
+function normalizeCountry(dc) {
+  const map = {
+    "France": "France", "UK": "United Kingdom", "US": "United States",
+    "Germany": "Germany", "Italy": "Italy", "Japan": "Japan",
+    "Netherlands": "Netherlands", "Belgium": "Belgium", "Spain": "Spain",
+    "Sweden": "Sweden", "Norway": "Norway", "Denmark": "Denmark",
+    "Australia": "Australia", "Canada": "Canada", "Brazil": "Brazil",
+    "Argentina": "Argentina", "Portugal": "Portugal", "Switzerland": "Switzerland",
+    "Austria": "Austria", "Greece": "Greece", "Poland": "Poland",
+    "Czech Republic": "Czech Republic", "Hungary": "Hungary",
+    "South Africa": "South Africa", "Nigeria": "Nigeria",
+    "South Korea": "South Korea", "Taiwan": "Taiwan",
+    "Colombia": "Colombia", "Mexico": "Mexico", "Jamaica": "Jamaica",
+    "Ireland": "Ireland", "New Zealand": "New Zealand",
+  };
+  return map[dc] || dc;
+}
+
+async function getVinylsForCountry(countryName) {
+  const all = await fetchDiscogsCollection();
+  return all.filter(r => {
+    const dc = r.basic_information.country || "";
+    return normalizeCountry(dc) === countryName;
+  }).map(r => ({
+    title:  r.basic_information.title,
+    artist: r.basic_information.artists[0]?.name || "?",
+    year:   r.basic_information.year,
+    cover:  r.basic_information.cover_image
+  }));
+}
 
 window.addEventListener("resize",()=>{scale=null;buildGlobe();});
 </script>
