@@ -1975,15 +1975,11 @@ async function fetchDiscogsCollection() {
     } catch(e) { return null; }
   }
 
-  // Batch 3 requests at a time to avoid rate limiting
-  for (let i = 0; i < all.length; i += 3) {
-    const batch = all.slice(i, i + 3);
-    const countries = await Promise.all(
-      batch.map(r => fetchReleaseCountry(r.basic_information.id))
-    );
-    countries.forEach((c, j) => { all[i + j].basic_information.country = c; });
-    // Small delay to respect Discogs rate limit (60 req/min)
-    if (i + 3 < all.length) await new Promise(r => setTimeout(r, 1100));
+  // One request at a time with 1.1s delay = ~54 req/min (under 60 limit)
+  for (let i = 0; i < all.length; i++) {
+    const country = await fetchReleaseCountry(all[i].basic_information.id);
+    all[i].basic_information.country = country;
+    if (i + 1 < all.length) await new Promise(r => setTimeout(r, 1100));
   }
 
   discogsCache = all;
