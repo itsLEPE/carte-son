@@ -1964,10 +1964,16 @@ async function fetchDiscogsCollection() {
     page++;
   }
   discogsCache = all;
-  // Debug: log all unique country values
+  // Debug: log all releases with their country
   const countries = [...new Set(all.map(r => r.basic_information.country || "N/A"))].sort();
   console.log("🎵 Discogs countries found:", countries);
   console.log("🎵 Total releases:", all.length);
+  console.log("🎵 Sample releases:", all.slice(0,5).map(r => ({
+    title: r.basic_information.title,
+    artist: r.basic_information.artists[0]?.name,
+    country: r.basic_information.country,
+    raw: Object.keys(r.basic_information)
+  })));
   return all;
 }
 
