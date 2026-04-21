@@ -1947,6 +1947,10 @@ async function fetchDiscogsCollection() {
     page++;
   }
   discogsCache = all;
+  // Debug: log all unique country values
+  const countries = [...new Set(all.map(r => r.basic_information.country || "N/A"))].sort();
+  console.log("🎵 Discogs countries found:", countries);
+  console.log("🎵 Total releases:", all.length);
   return all;
 }
 
