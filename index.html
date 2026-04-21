@@ -1954,6 +1954,7 @@ let discogsCache = null; // full collection cache
 
 async function fetchDiscogsCollection() {
   if (discogsCache) return discogsCache;
+  // Step 1: get all releases from collection
   let all = [], page = 1, pages = 1;
   while (page <= pages) {
     const apiUrl = `https://api.discogs.com/users/${DISCOGS_USER}/collection/folders/0/releases?token=${DISCOGS_TOKEN}&per_page=100&page=${page}`;
@@ -1963,17 +1964,31 @@ async function fetchDiscogsCollection() {
     all = all.concat(data.releases);
     page++;
   }
+
+  // Step 2: fetch country for each release individually (batched, 3 at a time)
+  async function fetchReleaseCountry(releaseId) {
+    try {
+      const url = `https://api.discogs.com/releases/${releaseId}?token=${DISCOGS_TOKEN}`;
+      const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
+      const data = await res.json();
+      return data.country || null;
+    } catch(e) { return null; }
+  }
+
+  // Batch 3 requests at a time to avoid rate limiting
+  for (let i = 0; i < all.length; i += 3) {
+    const batch = all.slice(i, i + 3);
+    const countries = await Promise.all(
+      batch.map(r => fetchReleaseCountry(r.basic_information.id))
+    );
+    countries.forEach((c, j) => { all[i + j].basic_information.country = c; });
+    // Small delay to respect Discogs rate limit (60 req/min)
+    if (i + 3 < all.length) await new Promise(r => setTimeout(r, 1100));
+  }
+
   discogsCache = all;
-  // Debug: log all releases with their country
-  const countries = [...new Set(all.map(r => r.basic_information.country || "N/A"))].sort();
-  console.log("🎵 Discogs countries found:", countries);
-  console.log("🎵 Total releases:", all.length);
-  console.log("🎵 Sample releases:", all.slice(0,5).map(r => ({
-    title: r.basic_information.title,
-    artist: r.basic_information.artists[0]?.name,
-    country: r.basic_information.country,
-    raw: Object.keys(r.basic_information)
-  })));
+  const foundCountries = [...new Set(all.map(r => r.basic_information.country || "N/A"))].sort();
+  console.log("🎵 Countries after detail fetch:", foundCountries);
   return all;
 }
 
