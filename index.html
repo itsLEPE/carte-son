@@ -1151,13 +1151,7 @@ function showCountry(name){
   let playerHTML = "";
 
   if(appleUrl){
-    // Try to open app via music://, simultaneously open https:// as fallback
-    const appUrl = appleUrl.replace("https://music.apple.com", "music://music.apple.com");
-    playerHTML += `<a href="#" class="apple-btn" onclick="
-      event.preventDefault();
-      window.location.href='${appUrl}';
-      setTimeout(()=>{ window.open('${appleUrl}','_blank'); }, 300);
-    ">
+    playerHTML += `<a href="${appleUrl}" target="_blank" rel="noopener" class="apple-btn">
       <span class="apple-btn-icon">${ICONS.apple}</span>
       <span class="apple-btn-text">
         <span class="apple-btn-label">Écouter sur</span>
