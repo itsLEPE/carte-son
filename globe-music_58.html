@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Bowlby+One&family=Geist+Mono:wght@300;400&display=swap" rel="stylesheet">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Globe Musical</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Geist Mono', monospace; }
+#app { display: flex; width: 100vw; height: 100vh; position: relative; overflow: hidden; background: #000; }
+#globe-container { flex: 1; position: relative; overflow: hidden; }
+
+/* CURSOR AVION (SVG data URI) */
+body { cursor: default; }
+#globe-svg { cursor: grab; display: block; }
+#globe-svg.dragging { cursor: grabbing; }
+
+/* ZOOM SLIDER — grand, centré à gauche */
+#zoom-controls {
+  position: absolute; left: 30px; top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  z-index: 10; user-select: none;
+}
+.zoom-label {
+  font-size: 10px; letter-spacing: 0.12em;
+  color: rgba(255,255,255,0.22); pointer-events: none;
+  font-weight: 300;
+}
+#zoom-track {
+  width: 2px; height: 280px; border-radius: 1px;
+  background: rgba(255,255,255,0.18);
+  position: relative; cursor: pointer;
+}
+#zoom-fill {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  border-radius: 1px;
+  background: transparent;
+  transition: height 0.12s cubic-bezier(0.25,0.46,0.45,0.94);
+}
+
+#zoom-thumb {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #fff;
+  cursor: grab;
+  box-shadow: 0 0 0 3px rgba(255,255,255,0.12), 0 2px 8px rgba(0,0,0,0.5);
+  transition: box-shadow 0.2s, transform 0.12s;
+  z-index: 2;
+}
+#zoom-thumb:hover {
+  box-shadow: 0 0 0 6px rgba(255,255,255,0.1), 0 2px 8px rgba(0,0,0,0.5);
+}
+#zoom-thumb.active {
+  transform: translateX(-50%) scale(1.2);
+}
+#zoom-comet {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  width: 20px;
+  pointer-events: none; z-index: 1;
+  top: 0;
+}
+
+/* HINT */
+#hint {
+  position: absolute; bottom: 26px; left: 70px;
+  font-size: 10px; color: rgba(255,255,255,0.15);
+  pointer-events: none; letter-spacing: 0.08em; text-transform: uppercase;
+}
+
+/* DESKTOP PANEL — droite */
+#panel-desktop {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 320px;
+  pointer-events: none; display: flex; flex-direction: column;
+  justify-content: center; padding: 2rem 1.75rem; z-index: 5;
+}
+#empty-desktop {
+  font-size: 10px; text-align: right; letter-spacing: 0.12em;
+  color: rgba(255,255,255,0.15); text-transform: uppercase; font-family: 'Geist Mono', monospace;
+}
+#info-desktop { display: none; }
+
+.country-header {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 10px; margin-bottom: 6px;
+}
+.flag { display: flex; align-items: center; flex-shrink: 0; }
+.flag svg { width: 30px; height: 20px; border-radius: 3px; display: block; box-shadow: 0 0 0 0.5px rgba(255,255,255,0.15); }
+.country-name { font-size: 38px; font-weight: 400; text-align: right; color: rgba(255,255,255,0.95); margin-bottom: 6px; font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.06em; line-height: 1; }
+.music-desc { font-size: 11px; line-height: 1.7; text-align: right; color: rgba(255,255,255,0.55); margin-bottom: 1.6rem; font-family: 'Geist Mono', monospace; font-weight: 300; letter-spacing: 0.02em; }
+.panel-sep { width: 1px; height: 36px; background: rgba(255,255,255,0.07); margin: 0 0 1.4rem auto; }
+.platform-links { display: flex; flex-direction: column; gap: 12px; align-items: flex-end; pointer-events: all; }
+.platform-btn { display: flex; align-items: center; text-decoration: none; cursor: pointer; transition: opacity 0.15s, transform 0.15s; }
+  .platform-btn:active { transform: scale(0.95); }
+.platform-btn:hover { opacity: 0.5; }
+.platform-icon { width: 52px; height: 52px; border-radius: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; overflow: hidden; background: transparent; border: 0.5px solid rgba(255,255,255,0.12); }
+.platform-icon svg { width: 100%; height: 100%; display: block; }
+.no-link { opacity: 0.1 !important; cursor: default; pointer-events: none; }
+
+/* TOOLTIP */
+#tooltip {
+  position: absolute; border-radius: 6px; padding: 5px 11px;
+  font-size: 11px; pointer-events: none; display: none; z-index: 20;
+  white-space: nowrap; letter-spacing: 0.05em;
+  background: rgba(8,8,8,0.92); border: 0.5px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.8);
+}
+
+  /* CURSOR AURA */
+  #cursor-aura {
+    position: fixed;
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.06) 40%, transparent 70%);
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    z-index: 9999;
+    transition: opacity 0.3s;
+  }
+
+  /* SEARCH BAR */
+  #search-wrap {
+    position: absolute; top: 66px; left: 28px;
+    z-index: 20; display: flex; flex-direction: column; gap: 0;
+  }
+  #search-input {
+    width: 200px; background: rgba(255,255,255,0.05);
+    border: 0.5px solid rgba(255,255,255,0.15);
+    border-radius: 8px; padding: 8px 14px;
+    font-size: 12px; color: rgba(255,255,255,0.85);
+    font-family: 'Geist Mono', monospace; letter-spacing: 0.04em;
+    outline: none; transition: border-color 0.2s, background 0.2s;
+    caret-color: rgba(255,255,255,0.6);
+  }
+  #search-input::placeholder { color: rgba(255,255,255,0.2); }
+  #search-input:focus {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.35);
+  }
+  #search-results {
+    display: none; flex-direction: column;
+    background: rgba(10,10,10,0.95);
+    border: 0.5px solid rgba(255,255,255,0.12);
+    border-top: none; border-radius: 0 0 8px 8px;
+    overflow: hidden; max-height: 220px; overflow-y: auto;
+  }
+  .search-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; cursor: pointer;
+    transition: background 0.12s;
+    font-size: 12px; color: rgba(255,255,255,0.75);
+    font-family: 'Geist Mono', monospace;
+  }
+  .search-item:hover { background: rgba(255,255,255,0.08); }
+  .search-item svg { border-radius: 2px; flex-shrink: 0; }
+  .search-item-name { font-family: 'Bebas Neue', sans-serif; font-size: 15px; color: rgba(255,255,255,0.9); letter-spacing: 0.05em; }
+
+  #zoom-reset {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: transparent;
+    border: 0.5px solid rgba(255,255,255,0.18);
+    color: rgba(255,255,255,0.35);
+    cursor: pointer; font-size: 14px; font-weight: 300;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color 0.2s, color 0.2s;
+    user-select: none; line-height: 1;
+    font-family: 'Geist Mono', monospace; letter-spacing: -0.05em;
+  }
+  #zoom-reset:hover {
+    border-color: rgba(255,255,255,0.4);
+    color: rgba(255,255,255,0.7);
+  }
+
+  #app-title {
+    position: absolute; top: 28px; left: 28px;
+    font-family: 'Bowlby One', cursive;
+    font-size: 22px; letter-spacing: 0.14em;
+    color: rgba(255,255,255,0.9);
+    pointer-events: none; z-index: 20;
+    text-transform: uppercase;
+    line-height: 1;
+  }
+
+  /* ── INTRO OVERLAY ─────────────────────────────────────────────────── */
+  #intro-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: #000;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+    cursor: pointer;
+  }
+  #intro-overlay.fade-out {
+    animation: introFadeOut 0.6s ease-in forwards;
+    pointer-events: none;
+  }
+  @keyframes introFadeOut {
+    0%   { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  #intro-globe-wrap {
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Rotoscope ring around globe */
+  #intro-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.04),
+      0 0 30px rgba(255,255,255,0.06),
+      inset 0 0 30px rgba(255,255,255,0.03);
+    animation: ringPulse 3s ease-in-out infinite;
+    pointer-events: none;
+  }
+  #intro-ring2 {
+    position: absolute;
+    border-radius: 50%;
+    border: 0.5px solid rgba(255,255,255,0.06);
+    animation: ringPulse 3s ease-in-out infinite 0.8s;
+    pointer-events: none;
+  }
+  @keyframes ringPulse {
+    0%,100% { opacity: 0.4; transform: scale(1); }
+    50%      { opacity: 0.9; transform: scale(1.015); }
+  }
+
+  /* Floating CARTE SON text */
+  #intro-title {
+    position: absolute;
+    font-family: 'Bowlby One', cursive;
+    font-size: 28px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.92);
+    text-shadow: 0 0 40px rgba(255,255,255,0.2);
+    white-space: nowrap;
+    animation: titleFloat 4s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes titleFloat {
+    0%,100% { transform: translateY(0px);   opacity: 0.85; }
+    50%      { transform: translateY(-6px);  opacity: 1; }
+  }
+
+  /* Hint text */
+  #intro-hint {
+    margin-top: 48px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.2);
+    animation: hintBlink 2.5s ease-in-out infinite;
+  }
+  @keyframes hintBlink {
+    0%,100% { opacity: 0.2; }
+    50%      { opacity: 0.5; }
+  }
+
+  /* Spin out animation on click */
+  #intro-globe-wrap.spin-out {
+    animation: globeSpinOut 0.7s cubic-bezier(0.4,0,1,1) forwards;
+  }
+  @keyframes globeSpinOut {
+    0%   { transform: rotate(0deg) scale(1);   opacity: 1; }
+    60%  { transform: rotate(180deg) scale(1.05); opacity: 0.8; }
+    100% { transform: rotate(360deg) scale(0); opacity: 0; }
+  }
+  #intro-title.text-blur-out {
+    animation: textBlurOut 0.5s ease-in forwards;
+  }
+  @keyframes textBlurOut {
+    0%   { filter: blur(0px);  opacity: 1;   letter-spacing: 0.22em; }
+    100% { filter: blur(20px); opacity: 0;   letter-spacing: 0.6em; }
+  }
+  #intro-hint.hint-fade-out {
+    animation: hintFade 0.3s ease-in forwards;
+  }
+  @keyframes hintFade { to { opacity: 0; } }
+
+  /* WELCOME screen — phase 1: fullscreen */
+  #welcome-banner {
+    position: fixed; inset: 0;
+    z-index: 1100;
+    background: #000;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+    opacity: 0;
+  }
+  #welcome-banner.phase1 {
+    animation: welcomeIn 2s ease-out forwards;
+  }
+  #welcome-banner.phase2 {
+    animation: welcomeOut 0.8s ease-in forwards;
+  }
+  #welcome-text {
+    font-family: 'Bowlby One', cursive;
+    font-size: clamp(28px, 5vw, 52px);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.95);
+    text-shadow: 0 0 80px rgba(255,255,255,0.12);
+  }
+  @keyframes welcomeIn {
+    0%   { opacity: 0; filter: blur(18px); }
+    40%  { opacity: 0.5; filter: blur(6px); }
+    100% { opacity: 1; filter: blur(0px); }
+  }
+  @keyframes welcomeOut {
+    0%   { opacity: 1; filter: blur(0px);  transform: scale(1); }
+    100% { opacity: 0; filter: blur(30px); transform: scale(0.94); }
+  }
+
+  /* Site fade-in after intro */
+  #app {
+    opacity: 0;
+    transition: opacity 1.2s ease-in;
+  }
+  #app.visible {
+    opacity: 1;
+  }
+
+  /* APPLE MUSIC BUTTON */
+  .apple-btn {
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 18px;
+    margin-top: 1.2rem;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.05);
+    border: 0.5px solid rgba(255,255,255,0.1);
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, transform 0.15s;
+    pointer-events: all;
+  }
+  .apple-btn:hover {
+    background: rgba(255,255,255,0.09);
+    border-color: rgba(255,255,255,0.2);
+    transform: translateX(-3px);
+  }
+  .apple-btn:active { transform: translateX(-3px) scale(0.98); }
+  .apple-btn-icon { width: 36px; height: 36px; flex-shrink: 0; }
+  .apple-btn-icon svg { width: 100%; height: 100%; border-radius: 9px; display: block; }
+  .apple-btn-text {
+    display: flex; flex-direction: column; gap: 2px; flex: 1; text-align: right;
+  }
+  .apple-btn-label {
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: rgba(255,255,255,0.35); font-family: 'Geist Mono', monospace;
+  }
+  .apple-btn-name {
+    font-size: 15px; font-weight: 500; color: rgba(255,255,255,0.9);
+    font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.08em;
+  }
+  .apple-btn-arrow {
+    font-size: 16px; color: rgba(255,255,255,0.3);
+    transition: color 0.2s, transform 0.2s;
+  }
+  .apple-btn:hover .apple-btn-arrow {
+    color: rgba(255,255,255,0.7);
+    transform: translateX(3px);
+  }
+  .apple-btn-empty { cursor: default; pointer-events: none; }
+
+  /* COMPLETION BADGE */
+  #completion {
+    position: absolute; bottom: 24px; right: 24px;
+    z-index: 10; text-align: right; pointer-events: all; cursor: pointer;
+  }
+  #completion-trigger { position: relative; }
+  #completion-pct {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 32px; letter-spacing: 0.08em;
+    color: rgba(255,255,255,0.85); line-height: 1;
+    transition: color 0.2s;
+  }
+  #completion:hover #completion-pct { color: rgba(255,255,255,1); }
+  #completion-label {
+    font-family: 'Geist Mono', monospace;
+    font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: rgba(255,255,255,0.22); margin-top: 2px;
+  }
+  #completion-bar {
+    width: 80px; height: 1px;
+    background: rgba(255,255,255,0.1);
+    margin-top: 6px; margin-left: auto; border-radius: 1px; overflow: hidden;
+  }
+  #completion-fill {
+    height: 100%; background: rgba(255,255,255,0.5);
+    border-radius: 1px; transition: width 0.6s ease;
+  }
+
+  /* DROPDOWN */
+  #completion-dropdown {
+    position: absolute; bottom: calc(100% + 12px); right: 0;
+    width: 240px; max-height: 320px; overflow-y: auto;
+    background: rgba(8,8,8,0.97);
+    border: 0.5px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    padding: 10px 0;
+    display: none; flex-direction: column;
+    pointer-events: all;
+    scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent;
+  }
+  #completion-dropdown.open { display: flex; }
+  .dropdown-header {
+    font-family: 'Geist Mono', monospace;
+    font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: rgba(255,255,255,0.25); padding: 4px 14px 8px;
+    border-bottom: 0.5px solid rgba(255,255,255,0.07); margin-bottom: 4px;
+  }
+  .dropdown-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 14px; cursor: pointer;
+    transition: background 0.12s;
+  }
+  .dropdown-item:hover { background: rgba(255,255,255,0.06); }
+  .dropdown-item .di-flag { width: 22px; height: 15px; flex-shrink: 0; border-radius: 2px; overflow: hidden; }
+  .dropdown-item .di-flag svg { width: 100%; height: 100%; display: block; }
+  .dropdown-item .di-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 14px; letter-spacing: 0.05em;
+    color: rgba(255,255,255,0.85); flex: 1; text-align: left;
+  }
+  .dropdown-item .di-dot {
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+    background: rgba(255,255,255,0.85);
+  }
+  .dropdown-section {
+    font-family: 'Geist Mono', monospace;
+    font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: rgba(255,255,255,0.18); padding: 8px 14px 4px;
+  }
+
+  /* PROFILE LINK */
+  #profile-link {
+    position: absolute; top: 22px; right: 24px;
+    z-index: 20; display: flex; align-items: center; gap: 8px;
+    text-decoration: none;
+    transition: opacity 0.2s;
+  }
+  #profile-link:hover { opacity: 0.6; }
+  #profile-avatar {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+    border: 0.5px solid rgba(255,255,255,0.15);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  #profile-avatar svg { width: 16px; height: 16px; }
+  #profile-name {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: rgba(255,255,255,0.4);
+  }
+</style>
+</head>
+<body>
+
+<div id="intro-overlay">
+  <div id="intro-globe-wrap">
+    <div id="intro-ring"></div>
+    <div id="intro-ring2"></div>
+    <canvas id="intro-globe-canvas"></canvas>
+    <div id="intro-title">Carte Son</div>
+  </div>
+  <div id="intro-hint">click or press space</div>
+</div>
+<div id="welcome-banner"><span id="welcome-text">Carte Son</span></div>
+<div id="cursor-aura"></div>
+<div id="app">
+  <div id="globe-container">
+    <svg id="globe-svg" width="100%" height="100%"></svg>
+    <div id="tooltip"></div>
+    <a id="profile-link" href="https://music.apple.com/profile/LEPE" onclick="event.preventDefault();window.location.href='music://music.apple.com/profile/LEPE'" target="_blank" rel="noopener">
+      <span id="profile-name">LEPE</span>
+      <div id="profile-avatar">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="amg2" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#FA233B"/><stop offset="100%" stop-color="#FB5C74"/></linearGradient></defs><rect width="24" height="24" rx="6" fill="url(#amg2)"/><path d="M16 8.5H13V15c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2c.37 0 .72.1 1.01.28V7h4v1.5z" fill="white"/></svg>
+      </div>
+    </a>
+
+    <div id="app-title">Carte Son</div>
+    <div id="search-wrap">
+      <input id="search-input" type="text" placeholder="Rechercher un pays..." autocomplete="off" spellcheck="false"/>
+      <div id="search-results"></div>
+    </div>
+
+    <div id="zoom-controls">
+      <span class="zoom-label">+</span>
+      <div id="zoom-track">
+        <div id="zoom-fill"></div>
+        <canvas id="zoom-comet"></canvas>
+        <div id="zoom-thumb"></div>
+      </div>
+      <span class="zoom-label">−</span>
+      <button id="zoom-reset">⊙</button>
+    </div>
+    
+  </div>
+  <div id="completion">
+    <div id="completion-dropdown"></div>
+    <div id="completion-trigger">
+      <div id="completion-pct">0%</div>
+      <div id="completion-label">globe complété</div>
+      <div id="completion-bar"><div id="completion-fill" style="width:0%"></div></div>
+    </div>
+  </div>
+  <div id="panel-desktop">
+    <div id="empty-desktop"></div>
+    <div id="info-desktop"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+<script>
+const COUNTRIES={
+  "France":        {flag:"🇫🇷",desc:"Chanson française, électro, variété... De Piaf à Daft Punk.",links:{apple:"https://music.apple.com/fr/playlist/top-100-france/pl.606afcbb70264d2eb2cadaf6"}},
+  "Spain":         {flag:"🇪🇸",desc:"Flamenco, rumba, reggaeton... Une culture musicale explosive.",links:{apple:null}},
+  "Portugal":      {flag:"🇵🇹",desc:"Le fado, âme mélancolique et poétique du Portugal.",links:{apple:null}},
+  "Germany":       {flag:"🇩🇪",desc:"Techno berlinois, schlager, classique... Une diversité unique.",links:{apple:null}},
+  "Italy":         {flag:"🇮🇹",desc:"Opéra, chanson napolitaine, pop italienne... La dolce vita.",links:{apple:null}},
+  "Netherlands":   {flag:"🇳🇱",desc:"EDM, house, néerlandophone... Amsterdam capitale de la danse.",links:{apple:null}},
+  "Belgium":       {flag:"🇧🇪",desc:"Pop franco-belge, rock flamand... Entre deux cultures.",links:{apple:null}},
+  "Switzerland":   {flag:"🇨🇭",desc:"Yodel, pop alémanique, jazz romand... La Suisse sonore.",links:{apple:null}},
+  "United Kingdom":{flag:"🇬🇧",desc:"Rock, britpop, grime, drum & bass... La scène la plus influente.",links:{apple:null,soundcloud:"https://soundcloud.com/user-577845501-725270629/sets/summ25?si=a392bbf5b6c345ab8e3d7bd5f378e624&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing"}},
+  "Ireland":       {flag:"🇮🇪",desc:"Folk celtique, tin whistle, musique de pub... L'Irlande chante.",links:{apple:null}},
+  "Austria":       {flag:"🇦🇹",desc:"Valses de Vienne, Mozart, électro... L'héritage revisité.",links:{apple:null}},
+  "Luxembourg":    {flag:"🇱🇺",desc:"Pop trilingue, folk luxembourgeois... Un carrefour unique.",links:{apple:null}},
+  // ── AMERICAS ─────────────────────────────────────────────────────────────
+  "United States":    {flag:"🇺🇸",desc:"Hip-hop, country, jazz, rock... Le pays qui a inventé la musique moderne.",links:{apple:null}},
+  "Canada":           {flag:"🇨🇦",desc:"Drake, Céline Dion, indie folk... Le grand nord qui groove.",links:{apple:null}},
+  "Mexico":           {flag:"🇲🇽",desc:"Mariachi, cumbia, reggaeton... El alma de México en música.",links:{apple:null}},
+  "Brazil":           {flag:"🇧🇷",desc:"Samba, bossa nova, funk carioca... Le rythme du monde vient d'ici.",links:{apple:null}},
+  "Argentina":        {flag:"🇦🇷",desc:"Tango, folklore, rock nacional... Buenos Aires et ses nuits enflammées.",links:{apple:null}},
+  "Colombia":         {flag:"🇨🇴",desc:"Cumbia, vallenato, salsa... Shakira et les rytmes de la costa.",links:{apple:null}},
+  "Chile":            {flag:"🇨🇱",desc:"Nueva canción, cueca, pop... Du Pacifique aux Andes.",links:{apple:null}},
+  "Peru":             {flag:"🇵🇪",desc:"Cumbia peruana, huayno, chicha... Les sons des Incas modernes.",links:{apple:null}},
+  "Venezuela":        {flag:"🇻🇪",desc:"Joropo, salsa venezolana, pop... Les llanos qui chantent.",links:{apple:null}},
+  "Ecuador":          {flag:"🇪🇨",desc:"Pasillo, cumbia, folk andin... La musique entre deux océans.",links:{apple:null}},
+  "Bolivia":          {flag:"🇧🇴",desc:"Saya, tinku, huayno... Les hauteurs de la Pachamama.",links:{apple:null}},
+  "Paraguay":         {flag:"🇵🇾",desc:"Polka paraguaya, guarania... La harpe comme âme du pays.",links:{apple:null}},
+  "Uruguay":          {flag:"🇺🇾",desc:"Candombe, tango oriental, murga... Montevideo la musicale.",links:{apple:null}},
+  "Cuba":             {flag:"🇨🇺",desc:"Son cubano, salsa, rumba... L'île qui a changé la musique mondiale.",links:{apple:null}},
+  "Jamaica":          {flag:"🇯🇲",desc:"Reggae, dancehall, ska... Bob Marley et l'esprit Rastafari.",links:{apple:null}},
+  "Haiti":            {flag:"🇭🇹",desc:"Kompa, rara, twoubadou... La perle des Antilles qui vibre.",links:{apple:null}},
+  "Dominican Republic":{flag:"🇩🇴",desc:"Merengue, bachata, dembow... Juan Luis Guerra et ses cadences.",links:{apple:null}},
+  "Puerto Rico":      {flag:"🇵🇷",desc:"Reggaeton, salsa, bomba... L'île qui a inventé le reggaeton.",links:{apple:null}},
+  "Guatemala":        {flag:"🇬🇹",desc:"Marimba, son guatemalteco... La marimba, instrument national.",links:{apple:null}},
+  "Honduras":         {flag:"🇭🇳",desc:"Punta, cumbia hondureña... Le rythme garifuna.",links:{apple:null}},
+  "Nicaragua":        {flag:"🇳🇮",desc:"Palo de Mayo, cumbia nica... La Costa Caribe qui danse.",links:{apple:null}},
+  "Costa Rica":       {flag:"🇨🇷",desc:"Cumbia, calypso, pop tico... Pura vida en musique.",links:{apple:null}},
+  "Panama":           {flag:"🇵🇦",desc:"Reggaeton, salsa panameña, tamborito... Le carrefour des rythmes.",links:{apple:null}},
+  "Trinidad and Tobago":{flag:"🇹🇹",desc:"Calypso, soca, steel pan... Le carnaval le plus musical du monde.",links:{apple:null}},
+
+  // ── AFRICA ───────────────────────────────────────────────────────────────
+  "Nigeria":          {flag:"🇳🇬",desc:"Afrobeats, Burna Boy, Wizkid... Lagos capitale mondiale de l'Afrobeats.",links:{apple:null}},
+  "South Africa":     {flag:"🇿🇦",desc:"Amapiano, kwaito, jazz... Johannesburg qui pulse.",links:{apple:null}},
+  "Ghana":            {flag:"🇬🇭",desc:"Highlife, hiplife, azonto... Accra, berceau du highlife.",links:{apple:null}},
+  "Senegal":          {flag:"🇸🇳",desc:"Mbalax, Youssou N'Dour, sabar... Dakar et son groove inimitable.",links:{apple:null}},
+  "Egypt":            {flag:"🇪🇬",desc:"Shaabi, om kalthoum, electronic... Le Caire entre tradition et modernité.",links:{apple:null}},
+  "Morocco":          {flag:"🇲🇦",desc:"Gnawa, chaabi, andalousie... Les sons du Maghreb.",links:{apple:null}},
+  "Algeria":          {flag:"🇩🇿",desc:"Raï, kabyle, chaabi algérien... Khaled et le raï mondial.",links:{apple:null}},
+  "Tunisia":          {flag:"🇹🇳",desc:"Malouf, mezoued, electronic... Carthage et ses sons anciens.",links:{apple:null}},
+  "Ethiopia":         {flag:"🇪🇹",desc:"Tizita, eskista, ethio-jazz... Mulatu Astatke et la soul éthiopienne.",links:{apple:null}},
+  "Kenya":            {flag:"🇰🇪",desc:"Benga, genge, afropop... Nairobi capitale est-africaine.",links:{apple:null}},
+  "Tanzania":         {flag:"🇹🇿",desc:"Bongo flava, taarab, dansi... Dar es Salaam qui swingue.",links:{apple:null}},
+  "Uganda":           {flag:"🇺🇬",desc:"Afrobeats ougandais, kadongo kamu... Kampala qui monte.",links:{apple:null}},
+  "Congo":            {flag:"🇨🇩",desc:"Soukous, ndombolo, rumba congolaise... Kinshasa capitale de la rumba.",links:{apple:null}},
+  "Angola":           {flag:"🇦🇴",desc:"Kuduro, semba, kizomba... Luanda et ses rythmes envoûtants.",links:{apple:null}},
+  "Mozambique":       {flag:"🇲🇿",desc:"Marrabenta, afrojazz... Maputo et l'influence lusophone.",links:{apple:null}},
+  "Zimbabwe":         {flag:"🇿🇼",desc:"Mbira, chimurenga, afropop... Thomas Mapfumo et la soul zimbabwéenne.",links:{apple:null}},
+  "Madagascar":       {flag:"🇲🇬",desc:"Salegy, tsapiky, afrobeats malgache... L'île rouge qui danse.",links:{apple:null}},
+  "Cameroon":         {flag:"🇨🇲",desc:"Bikutsi, makossa, afropop... Manu Dibango et l'âme camerounaise.",links:{apple:null}},
+  "Ivory Coast":      {flag:"🇨🇮",desc:"Coupé-décalé, zouglou, afrobeats... Abidjan capitale de la fête.",links:{apple:null}},
+  "Mali":             {flag:"🇲🇱",desc:"Blues du désert, kora, griot... Ali Farka Touré et les sons du Sahel.",links:{apple:null}},
+  "Guinea":           {flag:"🇬🇳",desc:"Mande jazz, balafon, djembé... Conakry et ses percussions.",links:{apple:null}},
+  "Sudan":            {flag:"🇸🇩",desc:"Sudanese jazz, nubian music... Les rives du Nil qui chantent.",links:{apple:null}},
+  "Somalia":          {flag:"🇸🇴",desc:"Dhaanto, folk somalien... La corne de l'Afrique et ses sons.",links:{apple:null}},
+  "Libya":            {flag:"🇱🇾",desc:"Tuareg music, folk libyen... Le désert qui résonne.",links:{apple:null}},
+  "Zambia":           {flag:"🇿🇲",desc:"Zambian music, kalindula... Lusaka qui groove.",links:{apple:null}},
+  "Rwanda":           {flag:"🇷🇼",desc:"Rwandan pop, intore, afrobeats... Kigali qui monte.",links:{apple:null}},
+
+  // ── MIDDLE EAST ──────────────────────────────────────────────────────────
+  "Turkey":           {flag:"🇹🇷",desc:"Arabesque, Turkish pop, fasıl... Istanbul entre Orient et Occident.",links:{apple:null}},
+  "Iran":             {flag:"🇮🇷",desc:"Musique persane, pop iranienne, dastgah... Téhéran underground.",links:{apple:null}},
+  "Saudi Arabia":     {flag:"🇸🇦",desc:"Khaleeji, nasheed, pop arabe... La péninsule arabique en musique.",links:{apple:null}},
+  "Iraq":             {flag:"🇮🇶",desc:"Maqam irakien, choubi, pop... Bagdad et ses traditions millénaires.",links:{apple:null}},
+  "Israel":           {flag:"🇮🇱",desc:"Mizrahi, folk, electronic... Tel Aviv capitale de la scène underground.",links:{apple:null}},
+  "Lebanon":          {flag:"🇱🇧",desc:"Fairuz, dabke, pop libanaise... Beyrouth et sa scène légendaire.",links:{apple:null}},
+  "Syria":            {flag:"🇸🇾",desc:"Muwashshah, folk syrien, pop... Damas et ses mélodies anciennes.",links:{apple:null}},
+  "Jordan":           {flag:"🇯🇴",desc:"Pop jordanienne, folk, dabke... Amman et ses nuits.",links:{apple:null}},
+  "United Arab Emirates":{flag:"🇦🇪",desc:"Khaleeji, electronic, pop... Dubaï carrefour musical mondial.",links:{apple:null}},
+  "Yemen":            {flag:"🇾🇪",desc:"Folk yéménite, oud, poésie... Les sons de l'Arabie heureuse.",links:{apple:null}},
+  "Afghanistan":      {flag:"🇦🇫",desc:"Rubab, ghazal, folk afghan... Ahmad Zahir et l'âme afghane.",links:{apple:null}},
+  "Pakistan":         {flag:"🇵🇰",desc:"Qawwali, nusrat fateh ali khan, coke studio... La musique des soufis.",links:{apple:null}},
+
+  // ── SOUTH & SOUTHEAST ASIA ───────────────────────────────────────────────
+  "India":            {flag:"🇮🇳",desc:"Bollywood, classical, bhangra... La plus grande industrie musicale du monde.",links:{apple:null}},
+  "Bangladesh":       {flag:"🇧🇩",desc:"Baul, rabindra sangeet, folk... Les chants du Bengale.",links:{apple:null}},
+  "Sri Lanka":        {flag:"🇱🇰",desc:"Baila, traditional folk, pop... L'île aux épices qui chante.",links:{apple:null}},
+  "Nepal":            {flag:"🇳🇵",desc:"Folk népalais, adhunik, classical... Les chants de l'Himalaya.",links:{apple:null}},
+  "Thailand":         {flag:"🇹🇭",desc:"Luk thung, morlam, Thai pop... Bangkok entre traditions et modernité.",links:{apple:null}},
+  "Vietnam":          {flag:"🇻🇳",desc:"Quan ho, nhạc đỏ, V-pop... Hanoi et ses mélodies du Nord.",links:{apple:null}},
+  "Indonesia":        {flag:"🇮🇩",desc:"Dangdut, gamelan, pop Indonesia... 17000 îles, 17000 sons.",links:{apple:null}},
+  "Malaysia":         {flag:"🇲🇾",desc:"P. Ramlee, joget, Malaysian pop... Kuala Lumpur multiculturelle.",links:{apple:null}},
+  "Philippines":      {flag:"🇵🇭",desc:"OPM, kundiman, folk... Manila et sa scène pop explosive.",links:{apple:null}},
+  "Myanmar":          {flag:"🇲🇲",desc:"Anyein, traditional folk, pop birman... Yangon qui résonne.",links:{apple:null}},
+  "Cambodia":         {flag:"🇰🇭",desc:"Khmer classical, moha ori, pop... L'âge d'or des années 60 cambodgiennes.",links:{apple:null}},
+  "Laos":             {flag:"🇱🇦",desc:"Morlam laotien, folk, pop... Vientiane et ses sons du Mékong.",links:{apple:null}},
+  "Singapore":        {flag:"🇸🇬",desc:"Mandopop, electronic, indie... La cité-état la plus branchée d'Asie.",links:{apple:null}},
+
+  // ── EAST ASIA ─────────────────────────────────────────────────────────────
+  "Japan":            {flag:"🇯🇵",desc:"J-pop, city pop, enka... Tokyo, capitale mondiale du vinyl.",links:{apple:null}},
+  "South Korea":      {flag:"🇰🇷",desc:"K-pop, BTS, trot, indie... Séoul qui conquiert le monde.",links:{apple:null}},
+  "China":            {flag:"🇨🇳",desc:"C-pop, guqin, Mandopop... Pékin et Shanghai entre tradition et modernité.",links:{apple:null}},
+  "Taiwan":           {flag:"🇹🇼",desc:"Mandopop, folk taiwanais, indie... Taipei et sa scène créative.",links:{apple:null}},
+  "Mongolia":         {flag:"🇲🇳",desc:"Throat singing, morin khuur, folk... Les steppes qui vibrent.",links:{apple:null}},
+  "Kazakhstan":       {flag:"🇰🇿",desc:"Dombra, folk kazakh, pop... Les grandes steppes en musique.",links:{apple:null}},
+  "Uzbekistan":       {flag:"🇺🇿",desc:"Shashmaqam, doira, pop ouzbek... Samarcande et ses sons de la Route de la Soie.",links:{apple:null}},
+  "Georgia":          {flag:"🇬🇪",desc:"Polyphonie géorgienne, folk, pop... Un patrimoine UNESCO et une scène techno.",links:{apple:null}},
+  "Armenia":          {flag:"🇦🇲",desc:"Duduk, folk arménien, pop... Charles Aznavour et l'âme arménienne.",links:{apple:null}},
+  "Azerbaijan":       {flag:"🇦🇿",desc:"Mugham, folk azéri, pop... Bakou entre Orient et Occident.",links:{apple:null}},
+
+  // ── OCEANIA ───────────────────────────────────────────────────────────────
+  "Australia":        {flag:"🇦🇺",desc:"Rock australien, indie, aboriginal... ACDC, Kylie Minogue et le bush.",links:{apple:null}},
+  "New Zealand":      {flag:"🇳🇿",desc:"Māori music, indie, pop... Lorde et les sons du bout du monde.",links:{apple:null}},
+  "Papua New Guinea": {flag:"🇵🇬",desc:"Kundu drum, folk mélanésien... Les sons de la jungle primordiale.",links:{apple:null}},
+
+  "Norway":        {flag:"🇳🇴",desc:"Black metal, pop scandinave, folk nordique... Du froid au dancefloor.",links:{apple:null}},
+  "Sweden":        {flag:"🇸🇪",desc:"ABBA, Spotify, Avicii... La Suède règne sur la pop mondiale.",links:{apple:null}},
+  "Denmark":       {flag:"🇩🇰",desc:"Pop nordique, electronic, folk... Copenhague vibre fort.",links:{apple:null}},
+  "Finland":       {flag:"🇫🇮",desc:"Heavy metal, folk finlandais, tango... L'âme sombre du Nord.",links:{apple:null}},
+  "Iceland":       {flag:"🇮🇸",desc:"Björk, Sigur Rós, ambient glacial... La musique des volcans.",links:{apple:null}},
+  "Poland":        {flag:"🇵🇱",desc:"Chopin, jazz polonais, electronic... Une scène riche et contrastée.",links:{apple:null}},
+  "Czech Republic":{flag:"🇨🇿",desc:"Rock tchèque, folk bohémien, classical... Prague et ses mélodies.",links:{apple:null}},
+  "Slovakia":      {flag:"🇸🇰",desc:"Folk slovaque, pop, electronic... Une identité musicale forte.",links:{apple:null}},
+  "Hungary":       {flag:"🇭🇺",desc:"Bartók, folk magyar, pop... L'âme musicale des steppes.",links:{apple:null}},
+  "Romania":       {flag:"🇷🇴",desc:"Manele, folk roumain, electronic... Bucarest en effervescence.",links:{apple:null}},
+  "Bulgaria":      {flag:"🇧🇬",desc:"Polyphonies bulgares, chalga, folk... Des voix millénaires.",links:{apple:null}},
+  "Greece":        {flag:"🇬🇷",desc:"Rebetiko, laïká, electronic... La Méditerranée qui danse.",links:{apple:null}},
+  "Croatia":       {flag:"🇭🇷",desc:"Klapa, turbofolk, electronic... Dalmacie et ses rivages sonores.",links:{apple:null}},
+  "Serbia":        {flag:"🇷🇸",desc:"Turbofolk, gypsy jazz, novacomposition... Belgrade la nuit.",links:{apple:null}},
+  "Ukraine":       {flag:"🇺🇦",desc:"Folk ukrainien, pop, electronic... Une culture résiliente et vibrante.",links:{apple:null}},
+  "Belarus":       {flag:"🇧🇾",desc:"Folk biélorusse, pop, rock... Minsk et ses sons underground.",links:{apple:null}},
+  "Lithuania":     {flag:"🇱🇹",desc:"Folk balte, jazz, electronic... Vilnius capitale créative.",links:{apple:null}},
+  "Latvia":        {flag:"🇱🇻",desc:"Chant letton, electronic, pop... Le pays des chorales.",links:{apple:null}},
+  "Estonia":       {flag:"🇪🇪",desc:"Arvo Pärt, electronic, folk... La musique minimaliste du Nord.",links:{apple:null}},
+  "Slovenia":      {flag:"🇸🇮",desc:"Folk slovène, rock, jazz... Ljubljana et son énergie créative.",links:{apple:null}},
+  "Albania":       {flag:"🇦🇱",desc:"Iso-polyphonie, pop albanaise... Un patrimoine classé UNESCO.",links:{apple:null}},
+  "North Macedonia":{flag:"🇲🇰",desc:"Folk macédonien, chalga, rock... Les Balkans qui résonnent.",links:{apple:null}},
+  "Bosnia and Herzegovina":{flag:"🇧🇦",desc:"Sevdah, folk bosnien, rock... La mélancolie des Balkans.",links:{apple:null}},
+  "Montenegro":    {flag:"🇲🇪",desc:"Folk monténégrin, gusle, pop... La voix des montagnes.",links:{apple:null}},
+  "Moldova":       {flag:"🇲🇩",desc:"Doïna, folk moldave, pop... Les plaines qui chantent.",links:{apple:null}}
+};
+
+const ICONS={
+  apple:`<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="amg" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#FA233B"/><stop offset="100%" stop-color="#FB5C74"/></linearGradient></defs><rect width="24" height="24" rx="6" fill="url(#amg)"/><path d="M16 8.5H13V15c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2c.37 0 .72.1 1.01.28V7h4v1.5z" fill="white"/></svg>`,
+  soundcloud:`<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect width="24" height="24" rx="6" fill="#FF5500"/><path d="M4.5 13.5c-.28 0-.5.22-.5.5s.22.5.5.5.5-.22.5-.5-.22-.5-.5-.5zm1.5-.5c-.28 0-.5.22-.5.5v1c0 .28.22.5.5.5s.5-.22.5-.5v-1c0-.28-.22-.5-.5-.5zm1.5-.8c-.28 0-.5.22-.5.5v1.8c0 .28.22.5.5.5s.5-.22.5-.5v-1.8c0-.28-.22-.5-.5-.5zm1.5-.7c-.28 0-.5.22-.5.5v2.5c0 .28.22.5.5.5s.5-.22.5-.5V12c0-.28-.22-.5-.5-.5zm1.5-1c-.28 0-.5.22-.5.5v3.5c0 .28.22.5.5.5s.5-.22.5-.5V11c0-.28-.22-.5-.5-.5zm1.5-.5a2 2 0 00-1 .28V15.5c0 .28.22.5.5.5h5a2 2 0 000-4c-.1 0-.2.01-.3.02A3 3 0 0011 11z" fill="white"/></svg>`
+};
+
+const FLAGS = {
+  "France": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#002395"/><rect x="10" width="10" height="20" fill="#fff"/><rect x="20" width="10" height="20" fill="#ED2939"/></svg>`,
+  "Spain": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#c60b1e"/><rect y="5" width="30" height="10" fill="#ffc400"/></svg>`,
+  "Portugal": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="12" height="20" fill="#006600"/><rect x="12" width="18" height="20" fill="#FF0000"/><circle cx="12" cy="10" r="4" fill="#FFD700" stroke="#003399" stroke-width="0.8"/></svg>`,
+  "Germany": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#000"/><rect y="7" width="30" height="6" fill="#DD0000"/><rect y="13" width="30" height="7" fill="#FFCE00"/></svg>`,
+  "Italy": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#009246"/><rect x="10" width="10" height="20" fill="#fff"/><rect x="20" width="10" height="20" fill="#CE2B37"/></svg>`,
+  "Netherlands": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#AE1C28"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#21468B"/></svg>`,
+  "Belgium": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#000"/><rect x="10" width="10" height="20" fill="#FFD90C"/><rect x="20" width="10" height="20" fill="#F00"/></svg>`,
+  "Switzerland": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#FF0000"/><rect x="13" y="4" width="4" height="12" fill="#fff"/><rect x="7" y="8" width="16" height="4" fill="#fff"/></svg>`,
+  "United Kingdom": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#012169"/><line x1="0" y1="0" x2="30" y2="20" stroke="#fff" stroke-width="3"/><line x1="30" y1="0" x2="0" y2="20" stroke="#fff" stroke-width="3"/><line x1="0" y1="0" x2="30" y2="20" stroke="#C8102E" stroke-width="1.5"/><line x1="30" y1="0" x2="0" y2="20" stroke="#C8102E" stroke-width="1.5"/><rect x="12" y="0" width="6" height="20" fill="#fff"/><rect x="0" y="7" width="30" height="6" fill="#fff"/><rect x="13" y="0" width="4" height="20" fill="#C8102E"/><rect x="0" y="8" width="30" height="4" fill="#C8102E"/></svg>`,
+  "Ireland": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#169B62"/><rect x="10" width="10" height="20" fill="#fff"/><rect x="20" width="10" height="20" fill="#FF883E"/></svg>`,
+  "Austria": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#ED2939"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#ED2939"/></svg>`,
+  "Norway": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#EF2B2D"/><rect x="8" width="4" height="20" fill="#fff"/><rect y="8" width="30" height="4" fill="#fff"/><rect x="9" width="2" height="20" fill="#002868"/><rect y="9" width="30" height="2" fill="#002868"/></svg>`,
+  "Sweden": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#006AA7"/><rect x="9" width="4" height="20" fill="#FECC02"/><rect y="8" width="30" height="4" fill="#FECC02"/></svg>`,
+  "Denmark": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#C60C30"/><rect x="11" width="3" height="20" fill="#fff"/><rect y="8" width="30" height="4" fill="#fff"/></svg>`,
+  "Finland": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#fff"/><rect x="8" width="4" height="20" fill="#003580"/><rect y="7" width="30" height="6" fill="#003580"/></svg>`,
+  "Iceland": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#003897"/><rect x="8" width="4" height="20" fill="#fff"/><rect y="8" width="30" height="4" fill="#fff"/><rect x="9" width="2" height="20" fill="#D72828"/><rect y="9" width="30" height="2" fill="#D72828"/></svg>`,
+  "Poland": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="10" fill="#fff"/><rect y="10" width="30" height="10" fill="#DC143C"/></svg>`,
+  "Czech Republic": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="10" fill="#fff"/><rect y="10" width="30" height="10" fill="#D7141A"/><polygon points="0,0 14,10 0,20" fill="#11457E"/></svg>`,
+  "Slovakia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#fff"/><rect y="7" width="30" height="6" fill="#0B4EA2"/><rect y="13" width="30" height="7" fill="#EE1C25"/><rect x="3" y="6" width="10" height="10" rx="1" fill="#fff"/><rect x="5" y="8" width="2" height="6" fill="#EE1C25"/><rect x="9" y="8" width="2" height="6" fill="#EE1C25"/><rect x="5" y="11" width="6" height="3" fill="#EE1C25"/></svg>`,
+  "Hungary": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#CE2939"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#477050"/></svg>`,
+  "Romania": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#002B7F"/><rect x="10" width="10" height="20" fill="#FCD116"/><rect x="20" width="10" height="20" fill="#CE1126"/></svg>`,
+  "Bulgaria": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#fff"/><rect y="7" width="30" height="6" fill="#00966E"/><rect y="13" width="30" height="7" fill="#D62612"/></svg>`,
+  "Greece": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#0D5EAF"/><rect y="0" width="30" height="2.2" fill="#fff"/><rect y="4.4" width="30" height="2.2" fill="#fff"/><rect y="8.9" width="30" height="2.2" fill="#fff"/><rect y="13.3" width="30" height="2.2" fill="#fff"/><rect y="17.8" width="30" height="2.2" fill="#fff"/><rect width="12" height="11" fill="#0D5EAF"/><rect x="4" width="4" height="11" fill="#fff"/><rect y="3.5" width="12" height="4" fill="#fff"/></svg>`,
+  "Croatia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#FF0000"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#0000FF"/><rect x="12" y="4" width="6" height="8" rx="0.5" fill="#fff" stroke="#ccc" stroke-width="0.3"/></svg>`,
+  "Serbia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#C6363C"/><rect y="7" width="30" height="6" fill="#0C4076"/><rect y="13" width="30" height="7" fill="#fff"/></svg>`,
+  "Ukraine": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="10" fill="#005BBB"/><rect y="10" width="30" height="10" fill="#FFD500"/></svg>`,
+  "Belarus": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#CF101A"/><rect y="13" width="30" height="7" fill="#009E49"/><rect width="5" height="20" fill="#fff"/><rect width="5" height="20" fill="none" stroke="#CF101A" stroke-width="0.5"/></svg>`,
+  "Lithuania": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#FDB913"/><rect y="7" width="30" height="6" fill="#006A44"/><rect y="13" width="30" height="7" fill="#C1272D"/></svg>`,
+  "Latvia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#9E3039"/><rect y="8" width="30" height="4" fill="#fff"/></svg>`,
+  "Estonia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#0072CE"/><rect y="7" width="30" height="6" fill="#000"/><rect y="13" width="30" height="7" fill="#fff"/></svg>`,
+  "Slovenia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#fff"/><rect y="7" width="30" height="6" fill="#003DA5"/><rect y="13" width="30" height="7" fill="#EE2523"/><circle cx="9" cy="8" r="3.5" fill="#EE2523"/><circle cx="9" cy="8" r="2.5" fill="#003DA5"/></svg>`,
+  "Albania": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#E41E20"/><text x="15" y="14" text-anchor="middle" font-size="12" fill="#000">🦅</text></svg>`,
+  "North Macedonia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#CE2028"/><line x1="0" y1="0" x2="30" y2="20" stroke="#F7E040" stroke-width="2"/><line x1="30" y1="0" x2="0" y2="20" stroke="#F7E040" stroke-width="2"/><line x1="15" y1="0" x2="15" y2="20" stroke="#F7E040" stroke-width="2"/><line x1="0" y1="10" x2="30" y2="10" stroke="#F7E040" stroke-width="2"/><circle cx="15" cy="10" r="3.5" fill="#F7E040"/><circle cx="15" cy="10" r="2" fill="#CE2028"/></svg>`,
+  "Bosnia and Herzegovina": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#002395"/><polygon points="8,0 22,20 8,20" fill="#FCCA0A"/><line x1="22" y1="1" x2="30" y2="1" stroke="#fff" stroke-width="1.2"/><line x1="23" y1="4" x2="30" y2="4" stroke="#fff" stroke-width="1.2"/><line x1="24" y1="7" x2="30" y2="7" stroke="#fff" stroke-width="1.2"/><line x1="25" y1="10" x2="30" y2="10" stroke="#fff" stroke-width="1.2"/><line x1="26" y1="13" x2="30" y2="13" stroke="#fff" stroke-width="1.2"/><line x1="27" y1="16" x2="30" y2="16" stroke="#fff" stroke-width="1.2"/><line x1="28" y1="19" x2="30" y2="19" stroke="#fff" stroke-width="1.2"/></svg>`,
+  "Montenegro": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#D4AF37"/><rect x="2" y="2" width="26" height="16" fill="#D4AF37"/><rect x="1" width="28" height="20" fill="none" stroke="#D4AF37" stroke-width="2"/><rect x="2" y="2" width="26" height="16" fill="#006837"/><rect x="2" y="2" width="26" height="16" fill="none" stroke="#D4AF37" stroke-width="1"/></svg>`,
+
+  "United States": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#B22234"/><rect y="1.54" width="30" height="1.54" fill="#fff"/><rect y="4.62" width="30" height="1.54" fill="#fff"/><rect y="7.69" width="30" height="1.54" fill="#fff"/><rect y="10.77" width="30" height="1.54" fill="#fff"/><rect y="13.85" width="30" height="1.54" fill="#fff"/><rect y="16.92" width="30" height="1.54" fill="#fff"/><rect width="12" height="10.77" fill="#3C3B6E"/></svg>`,
+  "Canada": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="7.5" height="20" fill="#FF0000"/><rect x="7.5" width="15" height="20" fill="#fff"/><rect x="22.5" width="7.5" height="20" fill="#FF0000"/><text x="15" y="14" text-anchor="middle" font-size="10" fill="#FF0000">🍁</text></svg>`,
+  "Mexico": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#006847"/><rect x="10" width="10" height="20" fill="#fff"/><rect x="20" width="10" height="20" fill="#CE1126"/></svg>`,
+  "Brazil": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#009C3B"/><polygon points="15,2 28,10 15,18 2,10" fill="#FFDF00"/><circle cx="15" cy="10" r="4" fill="#002776"/></svg>`,
+  "Argentina": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#74ACDF"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#74ACDF"/><circle cx="15" cy="10" r="2.5" fill="#F6B40E"/></svg>`,
+  "Colombia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="10" fill="#FCD116"/><rect y="10" width="30" height="5" fill="#003893"/><rect y="15" width="30" height="5" fill="#CE1126"/></svg>`,
+  "Chile": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="10" fill="#fff"/><rect y="10" width="30" height="10" fill="#D52B1E"/><rect width="12" height="10" fill="#0039A6"/><circle cx="6" cy="5" r="2" fill="#fff"/></svg>`,
+  "Peru": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#D91023"/><rect x="10" width="10" height="20" fill="#fff"/><rect x="20" width="10" height="20" fill="#D91023"/></svg>`,
+  "Venezuela": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#CF142B"/><rect y="7" width="30" height="6" fill="#FFD100"/><rect y="13" width="30" height="7" fill="#003087"/></svg>`,
+  "Ecuador": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="10" fill="#FFD100"/><rect y="10" width="30" height="5" fill="#034EA2"/><rect y="15" width="30" height="5" fill="#EF3340"/></svg>`,
+  "Bolivia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#D52B1E"/><rect y="7" width="30" height="6" fill="#F4C900"/><rect y="13" width="30" height="7" fill="#007A3D"/></svg>`,
+  "Paraguay": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#D52B1E"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#0038A8"/></svg>`,
+  "Uruguay": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#fff"/><rect y="2.5" width="30" height="2.5" fill="#75AADB"/><rect y="7.5" width="30" height="2.5" fill="#75AADB"/><rect y="12.5" width="30" height="2.5" fill="#75AADB"/><rect y="17.5" width="30" height="2.5" fill="#75AADB"/><rect width="12" height="10" fill="#fff"/><circle cx="6" cy="5" r="3" fill="#FCD116"/></svg>`,
+  "Cuba": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="4" fill="#002A8F"/><rect y="4" width="30" height="4" fill="#fff"/><rect y="8" width="30" height="4" fill="#002A8F"/><rect y="12" width="30" height="4" fill="#fff"/><rect y="16" width="30" height="4" fill="#002A8F"/><polygon points="0,0 14,10 0,20" fill="#CC0001"/><polygon points="2,10 7,7 7,13" fill="#fff"/></svg>`,
+  "Jamaica": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#000"/><polygon points="0,0 30,0 15,10" fill="#009B3A"/><polygon points="0,20 30,20 15,10" fill="#009B3A"/><line x1="0" y1="0" x2="30" y2="20" stroke="#FED100" stroke-width="4"/><line x1="30" y1="0" x2="0" y2="20" stroke="#FED100" stroke-width="4"/></svg>`,
+  "Haiti": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="10" fill="#00209F"/><rect y="10" width="30" height="10" fill="#D21034"/></svg>`,
+  "Dominican Republic": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="15" height="10" fill="#002D62"/><rect x="15" width="15" height="10" fill="#CF142B"/><rect y="10" width="15" height="10" fill="#CF142B"/><rect x="15" y="10" width="15" height="10" fill="#002D62"/><rect x="12" width="6" height="20" fill="#fff"/><rect y="8" width="30" height="4" fill="#fff"/></svg>`,
+  "Puerto Rico": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="4" fill="#ED0000"/><rect y="4" width="30" height="4" fill="#fff"/><rect y="8" width="30" height="4" fill="#ED0000"/><rect y="12" width="30" height="4" fill="#fff"/><rect y="16" width="30" height="4" fill="#ED0000"/><polygon points="0,0 15,10 0,20" fill="#0F4D96"/><circle cx="5" cy="10" r="2.5" fill="#fff"/></svg>`,
+  "Guatemala": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#4997D0"/><rect x="10" width="10" height="20" fill="#fff"/><rect x="20" width="10" height="20" fill="#4997D0"/></svg>`,
+  "Honduras": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#0073CF"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#0073CF"/></svg>`,
+  "Nicaragua": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#3D56A0"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#3D56A0"/></svg>`,
+  "Costa Rica": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="4" fill="#002B7F"/><rect y="4" width="30" height="4" fill="#fff"/><rect y="8" width="30" height="4" fill="#CE1126"/><rect y="12" width="30" height="4" fill="#fff"/><rect y="16" width="30" height="4" fill="#002B7F"/></svg>`,
+  "Panama": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="15" height="10" fill="#fff"/><rect x="15" width="15" height="10" fill="#D21034"/><rect y="10" width="15" height="10" fill="#003087"/><rect x="15" y="10" width="15" height="10" fill="#fff"/></svg>`,
+  "Trinidad and Tobago": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#CE1126"/><line x1="2" y1="0" x2="28" y2="20" stroke="#000" stroke-width="6"/><line x1="2" y1="0" x2="28" y2="20" stroke="#fff" stroke-width="8"/><line x1="2" y1="0" x2="28" y2="20" stroke="#000" stroke-width="5"/></svg>`,
+  "Nigeria": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#008751"/><rect x="10" width="10" height="20" fill="#fff"/><rect x="20" width="10" height="20" fill="#008751"/></svg>`,
+  "South Africa": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#007A4D"/><rect y="7" width="30" height="6" fill="#FFB612"/><rect width="30" height="6" fill="#002395"/><rect y="14" width="30" height="6" fill="#DE3831"/><polygon points="0,0 14,10 0,20" fill="#000"/><polygon points="0,2 11,10 0,18" fill="#fff"/><polygon points="0,4 9,10 0,16" fill="#FFB612"/></svg>`,
+  "Ghana": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#006B3F"/><rect y="7" width="30" height="6" fill="#FCD116"/><rect y="13" width="30" height="7" fill="#CE1126"/><polygon points="15,7 16.5,11 20.5,11 17.5,13.5 18.5,17.5 15,15 11.5,17.5 12.5,13.5 9.5,11 13.5,11" fill="#000"/></svg>`,
+  "Senegal": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#00853F"/><rect x="10" width="10" height="20" fill="#FDEF42"/><rect x="20" width="10" height="20" fill="#E31B23"/><polygon points="15,7 16.2,10.5 20,10.5 17,12.5 18.2,16 15,14 11.8,16 13,12.5 10,10.5 13.8,10.5" fill="#00853F"/></svg>`,
+  "Egypt": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#CE1126"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#000"/><rect x="12" y="8" width="6" height="4" fill="#C09300"/></svg>`,
+  "Morocco": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#C1272D"/><polygon points="15,6 16.5,11 21,11 17.5,14 18.5,18.5 15,15.5 11.5,18.5 12.5,14 9,11 13.5,11" fill="none" stroke="#006233" stroke-width="1"/></svg>`,
+  "Algeria": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="15" height="20" fill="#006233"/><rect x="15" width="15" height="20" fill="#fff"/><circle cx="16" cy="10" r="4" fill="#006233"/><circle cx="17.5" cy="10" r="4" fill="#fff"/><polygon points="19,7 20,10 19,13 22,10" fill="#D21034"/></svg>`,
+  "Tunisia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#E70013"/><circle cx="15" cy="10" r="5" fill="#fff"/><circle cx="16" cy="10" r="3.5" fill="#E70013"/></svg>`,
+  "Ethiopia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#078930"/><rect y="7" width="30" height="6" fill="#FCDD09"/><rect y="13" width="30" height="7" fill="#DA121A"/><circle cx="15" cy="10" r="4" fill="#0F47AF"/><polygon points="15,7 15.8,9.5 18.5,9.5 16.4,11 17.2,13.5 15,12 12.8,13.5 13.6,11 11.5,9.5 14.2,9.5" fill="#FCDD09"/></svg>`,
+  "Kenya": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#006600"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#BB0000"/><line x1="0" y1="10" x2="30" y2="10" stroke="#000" stroke-width="2"/></svg>`,
+  "Tanzania": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#1EB53A"/><rect y="13" width="30" height="7" fill="#00A3DD"/><line x1="0" y1="20" x2="30" y2="0" stroke="#000" stroke-width="6"/><line x1="0" y1="20" x2="30" y2="0" stroke="#FCD116" stroke-width="3"/></svg>`,
+  "Uganda": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="4" fill="#000"/><rect y="4" width="30" height="4" fill="#FCD116"/><rect y="8" width="30" height="4" fill="#DE3108"/><rect y="12" width="30" height="4" fill="#000"/><rect y="16" width="30" height="4" fill="#FCD116"/><circle cx="15" cy="10" r="4" fill="#fff"/></svg>`,
+  "Congo": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#007FFF"/><line x1="0" y1="20" x2="30" y2="0" stroke="#F7D918" stroke-width="5"/><rect width="30" height="5" fill="#CE1126"/><rect y="15" width="30" height="5" fill="#007A5E"/></svg>`,
+  "Angola": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="10" fill="#CC0000"/><rect y="10" width="30" height="10" fill="#000"/><rect x="12" y="7" width="6" height="6" fill="#FFCC00"/></svg>`,
+  "Mozambique": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#009A44"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#FCE100"/><polygon points="0,0 14,10 0,20" fill="#000"/><polygon points="1,2 10,10 1,18" fill="#D21034"/></svg>`,
+  "Zimbabwe": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="3" fill="#006400"/><rect y="3" width="30" height="3" fill="#FFD200"/><rect y="6" width="30" height="3" fill="#D00000"/><rect y="9" width="30" height="2" fill="#000"/><rect y="11" width="30" height="3" fill="#D00000"/><rect y="14" width="30" height="3" fill="#FFD200"/><rect y="17" width="30" height="3" fill="#006400"/><polygon points="0,0 14,10 0,20" fill="#000"/><polygon points="1,2 11,10 1,18" fill="#fff"/><polygon points="3,7 6,7 7.5,5 9,7 12,7 9.5,9 10.5,12 7.5,10 4.5,12 5.5,9" fill="#FFD200"/></svg>`,
+  "Madagascar": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#fff"/><rect x="10" width="20" height="10" fill="#FC3D32"/><rect x="10" y="10" width="20" height="10" fill="#007E3A"/></svg>`,
+  "Cameroon": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#007A5E"/><rect x="10" width="10" height="20" fill="#CE1126"/><rect x="20" width="10" height="20" fill="#FCD116"/><polygon points="15,7 16.2,10.5 20,10.5 17,12.5 18.2,16 15,14 11.8,16 13,12.5 10,10.5 13.8,10.5" fill="#FCD116"/></svg>`,
+  "Ivory Coast": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#F77F00"/><rect x="10" width="10" height="20" fill="#fff"/><rect x="20" width="10" height="20" fill="#009A44"/></svg>`,
+  "Mali": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#14B53A"/><rect x="10" width="10" height="20" fill="#FCD116"/><rect x="20" width="10" height="20" fill="#CE1126"/></svg>`,
+  "Guinea": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#CE1126"/><rect x="10" width="10" height="20" fill="#FCD116"/><rect x="20" width="10" height="20" fill="#009460"/></svg>`,
+  "Sudan": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#D21034"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#000"/><polygon points="0,0 14,10 0,20" fill="#007229"/></svg>`,
+  "Somalia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#4189DD"/><polygon points="15,6 16.5,11 21,11 17.5,14 18.5,18.5 15,15 11.5,18.5 12.5,14 9,11 13.5,11" fill="#fff"/></svg>`,
+  "Libya": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#000"/><rect y="7" width="30" height="6" fill="#239E46"/><rect y="13" width="30" height="7" fill="#000"/><circle cx="15" cy="10" r="2.5" fill="#fff"/></svg>`,
+  "Zambia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#198A00"/><rect x="20" width="10" height="20" fill="#000"/><rect x="23" width="4" height="20" fill="#EF7D00"/><rect x="27" width="3" height="20" fill="#DE0000"/></svg>`,
+  "Rwanda": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="10" fill="#20603D"/><rect y="10" width="30" height="5" fill="#FAD201"/><rect y="15" width="30" height="5" fill="#20603D"/><rect width="30" height="7" fill="#20603D"/><rect y="7" width="30" height="6" fill="#FAD201"/><rect y="13" width="30" height="7" fill="#E5BE01"/></svg>`,
+  "Turkey": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#E30A17"/><circle cx="12" cy="10" r="4" fill="#fff"/><circle cx="13.5" cy="10" r="3.2" fill="#E30A17"/><polygon points="18,10 19.5,7 21,10 19.5,13" fill="#fff"/></svg>`,
+  "Iran": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#239F40"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#DA0000"/></svg>`,
+  "Saudi Arabia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#006C35"/><rect y="15" width="30" height="5" fill="#fff"/></svg>`,
+  "Iraq": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#CE1126"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#000"/><rect x="12" y="8" width="6" height="4" fill="#007A3D"/></svg>`,
+  "Israel": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#fff"/><rect y="3" width="30" height="3" fill="#0038B8"/><rect y="14" width="30" height="3" fill="#0038B8"/><polygon points="15,7 17.5,11.5 12.5,11.5" fill="none" stroke="#0038B8" stroke-width="1"/><polygon points="15,13 17.5,8.5 12.5,8.5" fill="none" stroke="#0038B8" stroke-width="1"/></svg>`,
+  "Lebanon": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="5" fill="#fff"/><rect y="5" width="30" height="10" fill="#fff"/><rect y="15" width="30" height="5" fill="#fff"/><rect width="30" height="4" fill="#FE0000"/><rect y="16" width="30" height="4" fill="#FE0000"/><text x="15" y="13" text-anchor="middle" font-size="8" fill="#00A550">🌲</text></svg>`,
+  "Syria": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#CE1126"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#000"/><circle cx="11" cy="10" r="1.5" fill="#007A3D"/><circle cx="15" cy="10" r="1.5" fill="#007A3D"/><circle cx="19" cy="10" r="1.5" fill="#007A3D"/></svg>`,
+  "Jordan": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#007A3D"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#000"/><polygon points="0,0 14,10 0,20" fill="#CE1126"/><circle cx="5" cy="10" r="2" fill="#fff"/></svg>`,
+  "United Arab Emirates": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="7" height="20" fill="#EF3340"/><rect x="7" width="23" height="7" fill="#00732F"/><rect x="7" y="7" width="23" height="6" fill="#fff"/><rect x="7" y="13" width="23" height="7" fill="#000"/></svg>`,
+  "Yemen": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#CE1126"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#000"/></svg>`,
+  "Afghanistan": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#000"/><rect x="10" width="10" height="20" fill="#D32011"/><rect x="20" width="10" height="20" fill="#009A44"/></svg>`,
+  "Pakistan": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="7" height="20" fill="#fff"/><rect x="7" width="23" height="20" fill="#01411C"/><circle cx="17" cy="10" r="4" fill="#fff"/><circle cx="18.5" cy="10" r="3.2" fill="#01411C"/><polygon points="21,7 22.5,10 21,13 23.5,10" fill="#fff"/></svg>`,
+  "India": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#FF9933"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#138808"/><circle cx="15" cy="10" r="2.5" fill="none" stroke="#000080" stroke-width="0.8"/></svg>`,
+  "Bangladesh": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#006A4E"/><circle cx="14" cy="10" r="5" fill="#F42A41"/></svg>`,
+  "Sri Lanka": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="5" height="20" fill="#FF7700"/><rect x="5" width="5" height="20" fill="#008000"/><rect x="10" width="20" height="20" fill="#8D153A"/><rect x="12" y="3" width="14" height="14" rx="1" fill="#F5C518" opacity="0.3"/></svg>`,
+  "Nepal": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#fff"/><polygon points="2,0 2,20 18,20 18,12 12,12 12,0" fill="#003893"/><polygon points="3,1 3,19 17,19 17,13 11,13 11,1" fill="#DC143C"/></svg>`,
+  "Thailand": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="4" fill="#A51931"/><rect y="4" width="30" height="4" fill="#fff"/><rect y="8" width="30" height="4" fill="#2D2A4A"/><rect y="12" width="30" height="4" fill="#fff"/><rect y="16" width="30" height="4" fill="#A51931"/></svg>`,
+  "Vietnam": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#DA251D"/><polygon points="15,5 16.5,10 21,10 17.5,13 18.5,17.5 15,14.5 11.5,17.5 12.5,13 9,10 13.5,10" fill="#FFCD00"/></svg>`,
+  "Indonesia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="10" fill="#CE1126"/><rect y="10" width="30" height="10" fill="#fff"/></svg>`,
+  "Malaysia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#fff"/><rect y="2.85" width="30" height="2.85" fill="#CC0001"/><rect y="8.57" width="30" height="2.85" fill="#CC0001"/><rect y="14.28" width="30" height="2.85" fill="#CC0001"/><rect width="15" height="11.4" fill="#010066"/><circle cx="6" cy="5.7" r="3.5" fill="#FFCC00"/><circle cx="7.2" cy="5.7" r="2.8" fill="#010066"/></svg>`,
+  "Philippines": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="10" fill="#0038A8"/><rect y="10" width="30" height="10" fill="#CE1126"/><polygon points="0,0 14,10 0,20" fill="#fff"/><circle cx="5" cy="10" r="2.5" fill="#FCD116"/></svg>`,
+  "Myanmar": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#FECB00"/><rect y="7" width="30" height="6" fill="#34B233"/><rect y="13" width="30" height="7" fill="#EA2839"/><polygon points="15,3 16.5,8 21,8 17.5,11 18.5,15.5 15,12.5 11.5,15.5 12.5,11 9,8 13.5,8" fill="#fff"/></svg>`,
+  "Cambodia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#032EA1"/><rect y="7" width="30" height="6" fill="#E00025"/><rect y="13" width="30" height="7" fill="#032EA1"/><rect x="11" y="8" width="8" height="4" fill="#fff"/></svg>`,
+  "Laos": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#CE1126"/><rect y="7" width="30" height="6" fill="#002868"/><rect y="13" width="30" height="7" fill="#CE1126"/><circle cx="15" cy="10" r="3" fill="#fff"/></svg>`,
+  "Singapore": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="10" fill="#EF3340"/><rect y="10" width="30" height="10" fill="#fff"/><circle cx="9" cy="10" r="3.5" fill="#fff"/><circle cx="10.5" cy="10" r="3" fill="#EF3340"/></svg>`,
+  "Japan": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#fff"/><circle cx="15" cy="10" r="5.5" fill="#BC002D"/></svg>`,
+  "South Korea": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#fff"/><circle cx="15" cy="10" r="4.5" fill="#CD2E3A"/><circle cx="15" cy="10" r="2.2" fill="#0047A0"/><rect x="5" y="4" width="5" height="1.5" fill="#000"/><rect x="5" y="7" width="5" height="1.5" fill="#000"/><rect x="20" y="4" width="5" height="1.5" fill="#000"/><rect x="20" y="7" width="5" height="1.5" fill="#000"/></svg>`,
+  "China": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#DE2910"/><polygon points="5,2 6.2,5.5 10,5.5 7,7.5 8.2,11 5,9 1.8,11 3,7.5 0,5.5 3.8,5.5" fill="#FFDE00"/><polygon points="11,1 11.8,3 13.5,2.5 12.3,4 13.5,5.5 11.8,5 11,7 10.2,5 8.5,5.5 9.7,4 8.5,2.5 10.2,3" fill="#FFDE00"/></svg>`,
+  "Taiwan": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#FE0000"/><rect width="15" height="10" fill="#000095"/><circle cx="7.5" cy="5" r="3" fill="#fff"/></svg>`,
+  "Mongolia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#C4272F"/><rect x="10" width="10" height="20" fill="#2C67A1"/><rect x="20" width="10" height="20" fill="#C4272F"/><circle cx="5" cy="8" r="2" fill="#F9CF02"/><rect x="3" y="11" width="4" height="1" fill="#F9CF02"/><rect x="3" y="13" width="4" height="1" fill="#F9CF02"/><rect x="3" y="15" width="4" height="1" fill="#F9CF02"/></svg>`,
+  "Kazakhstan": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#00AFCA"/><circle cx="10" cy="10" r="4" fill="#FFE700"/><circle cx="10" cy="10" r="2" fill="#00AFCA"/><rect x="26" width="4" height="20" fill="#FFE700"/></svg>`,
+  "Uzbekistan": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#1EB53A"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#CE1126"/><rect y="6" width="30" height="1" fill="#fff"/><rect y="13" width="30" height="1" fill="#fff"/><rect width="30" height="6" fill="#009FCA"/></svg>`,
+  "Georgia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#fff"/><rect x="13" width="4" height="20" fill="#FF0000"/><rect y="8" width="30" height="4" fill="#FF0000"/><rect x="4" y="2" width="3" height="3" fill="#FF0000"/><rect x="23" y="2" width="3" height="3" fill="#FF0000"/><rect x="4" y="15" width="3" height="3" fill="#FF0000"/><rect x="23" y="15" width="3" height="3" fill="#FF0000"/></svg>`,
+  "Armenia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#D90012"/><rect y="7" width="30" height="6" fill="#0033A0"/><rect y="13" width="30" height="7" fill="#F2A800"/></svg>`,
+  "Azerbaijan": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#0092BC"/><rect y="7" width="30" height="6" fill="#E8192C"/><rect y="13" width="30" height="7" fill="#00B050"/><circle cx="15" cy="10" r="3" fill="#fff"/><circle cx="16" cy="10" r="2.4" fill="#E8192C"/></svg>`,
+  "Australia": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#012169"/><rect width="15" height="10" fill="#012169"/><line x1="0" y1="0" x2="15" y2="10" stroke="#fff" stroke-width="3"/><line x1="15" y1="0" x2="0" y2="10" stroke="#fff" stroke-width="3"/><line x1="0" y1="0" x2="15" y2="10" stroke="#CC0001" stroke-width="1.5"/><line x1="15" y1="0" x2="0" y2="10" stroke="#CC0001" stroke-width="1.5"/><rect x="6" y="0" width="3" height="10" fill="#fff"/><rect x="0" y="3.5" width="15" height="3" fill="#fff"/><rect x="7" y="0" width="1" height="10" fill="#CC0001"/><rect x="0" y="4.5" width="15" height="1" fill="#CC0001"/><circle cx="22" cy="14" r="2" fill="#fff"/></svg>`,
+  "New Zealand": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="20" fill="#012169"/><rect width="15" height="10" fill="#012169"/><line x1="0" y1="0" x2="15" y2="10" stroke="#fff" stroke-width="3"/><line x1="15" y1="0" x2="0" y2="10" stroke="#fff" stroke-width="3"/><line x1="0" y1="0" x2="15" y2="10" stroke="#CC0001" stroke-width="1.5"/><line x1="15" y1="0" x2="0" y2="10" stroke="#CC0001" stroke-width="1.5"/><rect x="6" y="0" width="3" height="10" fill="#fff"/><rect x="0" y="3.5" width="15" height="3" fill="#fff"/><rect x="7" y="0" width="1" height="10" fill="#CC0001"/><rect x="0" y="4.5" width="15" height="1" fill="#CC0001"/><circle cx="21" cy="5" r="1.5" fill="#CC0001"/><circle cx="25" cy="9" r="1.5" fill="#CC0001"/><circle cx="23" cy="14" r="1.5" fill="#CC0001"/></svg>`,
+  "Papua New Guinea": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><polygon points="0,0 30,0 0,20" fill="#000"/><polygon points="30,0 30,20 0,20" fill="#CE1126"/><circle cx="8" cy="5" r="1.5" fill="#FFD700"/><circle cx="5" cy="10" r="1" fill="#FFD700"/><circle cx="10" cy="14" r="1" fill="#FFD700"/></svg>`,
+
+  "Moldova": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="10" height="20" fill="#003DA5"/><rect x="10" width="10" height="20" fill="#FFD100"/><rect x="20" width="10" height="20" fill="#CC0001"/></svg>`,
+  "Luxembourg": `<svg viewBox="0 0 30 20" xmlns="http://www.w3.org/2000/svg" style="border-radius:3px"><rect width="30" height="7" fill="#EF3340"/><rect y="7" width="30" height="6" fill="#fff"/><rect y="13" width="30" height="7" fill="#00A3E0"/></svg>`,
+};
+
+const PLATFORMS=[{key:"apple",label:"Apple Music"}];
+
+const svgEl=d3.select("#globe-svg");
+const tooltipEl=document.getElementById("tooltip");
+const container=document.getElementById("globe-container");
+const infoDesktop=document.getElementById("info-desktop");
+const emptyDesktop=document.getElementById("empty-desktop");
+const trackEl=document.getElementById("zoom-track");
+const thumbEl=document.getElementById("zoom-thumb");
+const fillEl=document.getElementById("zoom-fill");
+const TRACK_H=280;
+
+let W,H,scale,minScale,maxScale;
+let rotation=[-10,-48];
+let selectedCountry=null;
+let isDragging=false,lastX,lastY;
+let geoFeatures=[];
+let proj,pathFn;
+let animating=false; // blocks click-zoom during search anim
+let sliderDragging=false,shimmerTimer=null;
+
+// ── SLIDER ────────────────────────────────────────────────────────────────────
+function scaleToT(s){return Math.log(s/minScale)/Math.log(maxScale/minScale);}
+function tToScale(t){return minScale*Math.pow(maxScale/minScale,t);}
+
+function updateSliderUI(shimmer){
+  const t=scaleToT(scale);
+  const px=Math.max(0,Math.min(TRACK_H,t*TRACK_H));
+  thumbEl.style.bottom=(px-7)+"px";
+  fillEl.style.height=px+"px";
+  if(shimmer){
+    fillEl.classList.remove("glow");
+    void fillEl.offsetWidth; // reflow
+    fillEl.classList.add("glow");
+    clearTimeout(shimmerTimer);
+    shimmerTimer=setTimeout(()=>fillEl.classList.remove("glow"),400);
+  }
+}
+
+function sliderSetFromY_unused(clientY){
+  const rect=trackEl.getBoundingClientRect();
+  let t=1-(clientY-rect.top)/TRACK_H;
+  t=Math.max(0,Math.min(1,t));
+  scale=tToScale(t);
+  globeUpdate();
+  updateSliderUI(true);
+}
+
+// ── COMET TRAIL ──────────────────────────────────────────────────────────────
+const cometCanvas = document.getElementById("zoom-comet");
+const cometCtx = cometCanvas.getContext("2d");
+const COMET_W = 20;
+cometCanvas.width = COMET_W;
+cometCanvas.height = TRACK_H;
+cometCanvas.style.height = TRACK_H + "px";
+
+// Trail particles: each has { y, opacity, radius }
+let cometParticles = [];
+let cometHeadY = null; // current head position (px from top of canvas)
+let cometVelocity = 0;
+let cometAnimFrame = null;
+let lastThumbPx = 0;
+
+function spawnParticles(headY, dir) {
+  const trailLength = 6;
+  for (let i = 0; i < trailLength; i++) {
+    const offset = (i / trailLength) * 18 * dir;
+    cometParticles.push({
+      y: headY + offset,
+      opacity: (1 - i / trailLength) * 0.28,
+      radius: Math.max(0.8, 2.5 * (1 - i / trailLength)),
+      life: 1.0,
+      decay: 0.055 + (i / trailLength) * 0.07
+    });
+  }
+}
+
+function drawComet() {
+  cometCtx.clearRect(0, 0, COMET_W, TRACK_H);
+  if (cometParticles.length === 0 && cometHeadY === null) return;
+
+  // Draw particles (trail)
+  cometParticles.forEach(p => {
+    if (p.life <= 0) return;
+    const grad = cometCtx.createRadialGradient(COMET_W/2, p.y, 0, COMET_W/2, p.y, p.radius * 2.5);
+    grad.addColorStop(0, `rgba(255,255,255,${p.opacity * p.life})`);
+    grad.addColorStop(1, `rgba(255,255,255,0)`);
+    cometCtx.beginPath();
+    cometCtx.arc(COMET_W/2, p.y, p.radius * 2.5, 0, Math.PI * 2);
+    cometCtx.fillStyle = grad;
+    cometCtx.fill();
+  });
+
+  // Draw head
+  if (cometHeadY !== null) {
+    const headGrad = cometCtx.createRadialGradient(COMET_W/2, cometHeadY, 0, COMET_W/2, cometHeadY, 5);
+    headGrad.addColorStop(0, "rgba(255,255,255,0.5)");
+    headGrad.addColorStop(0.5, "rgba(255,255,255,0.18)");
+    headGrad.addColorStop(1, "rgba(255,255,255,0)");
+    cometCtx.beginPath();
+    cometCtx.arc(COMET_W/2, cometHeadY, 5, 0, Math.PI * 2);
+    cometCtx.fillStyle = headGrad;
+    cometCtx.fill();
+  }
+
+  // Decay particles
+  cometParticles.forEach(p => p.life -= p.decay);
+  cometParticles = cometParticles.filter(p => p.life > 0);
+
+  cometAnimFrame = requestAnimationFrame(drawComet);
+}
+
+function startCometAnim() {
+  if (!cometAnimFrame) cometAnimFrame = requestAnimationFrame(drawComet);
+}
+function stopCometAnim() {
+  if (cometAnimFrame) { cancelAnimationFrame(cometAnimFrame); cometAnimFrame = null; }
+  cometCtx.clearRect(0, 0, COMET_W, TRACK_H);
+  cometHeadY = null;
+}
+
+let cometStopTimer = null;
+
+function updateAura(newPx, oldPx) {
+  if (Math.abs(newPx - oldPx) < 0.5) return;
+  const dir = newPx > oldPx ? -1 : 1; // newPx is from bottom; canvas is top-down
+  // Convert from bottom-px to top-px for canvas
+  const headTopY = TRACK_H - newPx;
+  cometHeadY = headTopY;
+  spawnParticles(headTopY, dir);
+  startCometAnim();
+  clearTimeout(cometStopTimer);
+  cometStopTimer = setTimeout(() => {
+    cometHeadY = null;
+    cometStopTimer = setTimeout(stopCometAnim, 600);
+  }, 120);
+}
+
+function sliderSetFromYWithAura(clientY) {
+  const oldPx = Math.max(0, Math.min(TRACK_H, scaleToT(scale) * TRACK_H));
+  const rect = trackEl.getBoundingClientRect();
+  let t = 1 - (clientY - rect.top) / TRACK_H;
+  t = Math.max(0, Math.min(1, t));
+  scale = tToScale(t);
+  globeUpdate();
+  const newPx = Math.max(0, Math.min(TRACK_H, t * TRACK_H));
+  updateSliderUI(false);
+  updateAura(newPx, oldPx);
+  lastThumbPx = newPx;
+}
+
+thumbEl.addEventListener("mousedown",e=>{sliderDragging=true;thumbEl.classList.add("active");e.stopPropagation();e.preventDefault();});
+trackEl.addEventListener("mousedown",e=>{sliderSetFromYWithAura(e.clientY);sliderDragging=true;thumbEl.classList.add("active");e.stopPropagation();});
+window.addEventListener("mousemove",e=>{if(sliderDragging)sliderSetFromYWithAura(e.clientY);});
+window.addEventListener("mouseup",()=>{sliderDragging=false;thumbEl.classList.remove("active");});
+
+// ── GLOBE ─────────────────────────────────────────────────────────────────────
+function buildGlobe(){
+  W=container.clientWidth; H=container.clientHeight;
+  minScale=Math.min(W,H)*0.40; maxScale=minScale*9;
+  if(!scale)scale=minScale;
+  proj=d3.geoOrthographic().scale(scale).translate([W/2,H/2]).rotate(rotation).clipAngle(90);
+  pathFn=d3.geoPath().projection(proj);
+  svgEl.selectAll("*").remove();
+  svgEl.attr("viewBox",`0 0 ${W} ${H}`);
+
+  svgEl.append("circle").attr("id","globe-ring")
+    .attr("cx",W/2).attr("cy",H/2).attr("r",scale+1)
+    .attr("fill","none").attr("stroke","rgba(255,255,255,0.07)").attr("stroke-width",5);
+
+  svgEl.append("circle").attr("id","ocean")
+    .attr("cx",W/2).attr("cy",H/2).attr("r",scale).attr("fill","#080808");
+
+  svgEl.append("path").attr("id","grat")
+    .datum(d3.geoGraticule()()).attr("d",pathFn)
+    .attr("fill","none").attr("stroke","rgba(255,255,255,0.04)").attr("stroke-width",0.5);
+
+  svgEl.selectAll(".country").data(geoFeatures).enter()
+    .append("path").attr("class","country")
+    .attr("d",pathFn)
+    .attr("fill",d=>d.properties.name===selectedCountry?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.06)")
+    .attr("stroke","none").attr("stroke-width",0)
+    .style("cursor","inherit")
+    .on("mousemove",function(event,d){
+      const n=d.properties.name;
+      if(!COUNTRIES[n])return;
+      tooltipEl.style.display="block";
+      tooltipEl.style.left=(event.offsetX+16)+"px";
+      tooltipEl.style.top=(event.offsetY-12)+"px";
+      tooltipEl.textContent=COUNTRIES[n].flag+"  "+n;
+      if(n!==selectedCountry)d3.select(this).attr("fill","rgba(255,255,255,0.16)");
+    })
+    .on("mouseleave",function(event,d){
+      tooltipEl.style.display="none";
+      d3.select(this).attr("fill",d.properties.name===selectedCountry?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.06)");
+    })
+    .on("click",function(event,d){
+      const n=d.properties.name;
+      if(!COUNTRIES[n])return;
+      if(animating) return; // ignore click during search animation
+      zoomToCountry(d);
+      showCountry(n);
+    });
+
+  // Internal borders only (a !== b filters out coastlines)
+  svgEl.append("path").attr("id","mesh")
+    .datum(topojson.mesh(window._topoWorld, window._topoWorld.objects.countries, (a,b) => a !== b))
+    .attr("d", pathFn)
+    .attr("fill","none")
+    .attr("stroke","rgba(255,255,255,0.45)")
+    .attr("stroke-width",0.35)
+    .attr("stroke-linejoin","round");
+
+  // Coastlines separately (a === b = outer border)
+  svgEl.append("path").attr("id","coast")
+    .datum(topojson.mesh(window._topoWorld, window._topoWorld.objects.countries, (a,b) => a === b))
+    .attr("d", pathFn)
+    .attr("fill","none")
+    .attr("stroke","rgba(255,255,255,0.45)")
+    .attr("stroke-width",0.35)
+    .attr("stroke-linejoin","round");
+
+  svgEl.append("circle").attr("id","globe-border")
+    .attr("cx",W/2).attr("cy",H/2).attr("r",scale)
+    .attr("fill","none").attr("stroke","rgba(255,255,255,0.22)").attr("stroke-width",0.8);
+
+  setupInteraction();
+  updateSliderUI(false);
+}
+
+function globeUpdate(){
+  proj.scale(scale).translate([W/2,H/2]).rotate(rotation);
+  pathFn=d3.geoPath().projection(proj);
+  svgEl.select("#ocean").attr("r",scale);
+  svgEl.select("#globe-ring").attr("r",scale+1);
+  svgEl.select("#globe-border").attr("r",scale);
+  svgEl.select("#grat").attr("d",pathFn);
+  svgEl.selectAll(".country").attr("d",pathFn);
+  svgEl.select("#mesh").attr("d", pathFn);
+  svgEl.select("#coast").attr("d", pathFn);
+}
+
+function setupInteraction(){
+  const svgNode=document.getElementById("globe-svg");
+  svgEl.on("mousedown",function(e){
+    if(e.target.classList.contains("country"))return;
+    isDragging=true; lastX=e.clientX; lastY=e.clientY;
+    svgNode.classList.add("dragging");
+  });
+  window.addEventListener("mousemove",function(e){
+    if(!isDragging)return;
+    rotation[0]+=(e.clientX-lastX)*(0.3*(minScale/scale));
+    rotation[1]-=(e.clientY-lastY)*(0.3*(minScale/scale));
+    rotation[1]=Math.max(-90,Math.min(90,rotation[1]));
+    lastX=e.clientX; lastY=e.clientY;
+    globeUpdate();
+  });
+  window.addEventListener("mouseup",()=>{isDragging=false;svgNode.classList.remove("dragging");});
+  svgEl.on("wheel",function(e){
+    e.preventDefault();
+    const oldPx2 = Math.max(0, Math.min(TRACK_H, scaleToT(scale) * TRACK_H));
+    scale=Math.max(minScale,Math.min(maxScale,scale*(e.deltaY>0?0.85:1.18)));
+    globeUpdate(); updateSliderUI(false);
+    const newPx2 = Math.max(0, Math.min(TRACK_H, scaleToT(scale) * TRACK_H));
+    updateAura(newPx2, oldPx2);
+  },{passive:false});
+
+  // ZOOM RESET BUTTON
+  const resetBtn = document.getElementById("zoom-reset");
+  if(resetBtn){
+    resetBtn.addEventListener("click", () => {
+      const startScale = scale;
+      const targetScale = minScale;
+      const duration = 1000;
+      const startTime = performance.now();
+      function easeInOutCubic(t){ return t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2; }
+      (function step(now){
+        const raw = Math.min(1,(now-startTime)/duration);
+        scale = startScale + (targetScale-startScale)*easeInOutCubic(raw);
+        scale = Math.max(minScale,Math.min(maxScale,scale));
+        globeUpdate(); updateSliderUI(false);
+        if(raw<1) requestAnimationFrame(step);
+      })(performance.now());
+    });
+  }
+}
+
+
+// ── ZOOM TO COUNTRY ON CLICK ──────────────────────────────────────────────────
+function getCountryArea(feature) {
+  // Approximate area using d3.geoArea (steradians)
+  return d3.geoArea(feature);
+}
+
+function zoomToCountry(feature) {
+  const centroid = d3.geoCentroid(feature);
+  const area = getCountryArea(feature);
+
+  // Map area to zoom level:
+  // Very small (Monaco, Luxembourg) area < 0.0001  → zoom ~6x
+  // Small (Belgium, Switzerland)     area < 0.001  → zoom ~4.5x
+  // Medium (France, Germany)         area < 0.01   → zoom ~3x
+  // Large (Brazil, Russia)           area < 0.1    → zoom ~2x
+  // Very large (Russia, Canada)      area >= 0.1   → zoom ~1.4x
+  let zoomFactor;
+  if      (area < 0.00005) zoomFactor = 7.0;
+  else if (area < 0.0002)  zoomFactor = 5.5;
+  else if (area < 0.001)   zoomFactor = 4.2;
+  else if (area < 0.005)   zoomFactor = 3.2;
+  else if (area < 0.02)    zoomFactor = 2.5;
+  else if (area < 0.06)    zoomFactor = 2.0;
+  else if (area < 0.12)    zoomFactor = 1.6;
+  else                     zoomFactor = 1.3;
+
+  const targetScale = Math.min(maxScale, minScale * zoomFactor);
+  const targetRot   = [-centroid[0], -centroid[1]];
+
+  const startRot   = [...rotation];
+  const startScale = scale;
+  const duration   = 1400;
+  const startTime  = performance.now();
+
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2;
+  }
+
+  function step(now) {
+    const raw = Math.min(1, (now - startTime) / duration);
+    const t   = easeInOutCubic(raw);
+
+    rotation[0] = startRot[0] + (targetRot[0] - startRot[0]) * t;
+    rotation[1] = startRot[1] + (targetRot[1] - startRot[1]) * t;
+    scale       = startScale  + (targetScale  - startScale)  * t;
+
+    globeUpdate();
+    updateSliderUI(false);
+
+    if (raw < 1) requestAnimationFrame(step);
+    else {
+      rotation[0] = targetRot[0]; rotation[1] = targetRot[1];
+      scale = targetScale;
+      globeUpdate(); updateSliderUI(false);
+    }
+  }
+  requestAnimationFrame(step);
+}
+
+function showCountry(name){
+  selectedCountry=name;
+  const c=COUNTRIES[name];
+  emptyDesktop.style.display="none";
+  infoDesktop.style.display="block";
+  const appleUrl = c.links.apple;
+  const scUrl    = c.links.soundcloud;
+  let playerHTML = "";
+
+  if(appleUrl){
+    // Try to open app via music://, simultaneously open https:// as fallback
+    const appUrl = appleUrl.replace("https://music.apple.com", "music://music.apple.com");
+    playerHTML += `<a href="#" class="apple-btn" onclick="
+      event.preventDefault();
+      window.location.href='${appUrl}';
+      setTimeout(()=>{ window.open('${appleUrl}','_blank'); }, 300);
+    ">
+      <span class="apple-btn-icon">${ICONS.apple}</span>
+      <span class="apple-btn-text">
+        <span class="apple-btn-label">Écouter sur</span>
+        <span class="apple-btn-name">Apple Music</span>
+      </span>
+      <span class="apple-btn-arrow">→</span>
+    </a>`;
+  }
+  if(scUrl){
+    playerHTML += `<a href="${scUrl}" target="_blank" rel="noopener" class="apple-btn" style="margin-top:8px">
+      <span class="apple-btn-icon">${ICONS.soundcloud}</span>
+      <span class="apple-btn-text">
+        <span class="apple-btn-label">Écouter sur</span>
+        <span class="apple-btn-name">SoundCloud</span>
+      </span>
+      <span class="apple-btn-arrow">→</span>
+    </a>`;
+  }
+  if(!appleUrl && !scUrl){
+    playerHTML = `<div class="apple-btn apple-btn-empty">
+      <span class="apple-btn-icon" style="opacity:0.2">${ICONS.apple}</span>
+      <span class="apple-btn-text">
+        <span class="apple-btn-label" style="opacity:0.25">playlist à venir</span>
+      </span>
+    </div>`;
+  }
+  const links = playerHTML;
+  infoDesktop.innerHTML=`<div class="country-header"><div class="country-name">${name}</div><span class="flag">${FLAGS[name] || ""}</span></div><div class="music-desc">${c.desc}</div>${links}`;
+  svgEl.selectAll(".country").attr("fill",d=>d.properties.name===selectedCountry?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.06)");
+}
+
+fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
+  .then(r=>r.json())
+  .then(world=>{
+    window._topoWorld = world;
+    const features=topojson.feature(world,world.objects.countries).features;
+    const nameMap={"250":"France","724":"Spain","620":"Portugal","276":"Germany","380":"Italy","528":"Netherlands","056":"Belgium","756":"Switzerland","826":"United Kingdom","372":"Ireland","040":"Austria","442":"Luxembourg","578":"Norway","752":"Sweden","208":"Denmark","246":"Finland","352":"Iceland","616":"Poland","203":"Czech Republic","703":"Slovakia","348":"Hungary","642":"Romania","100":"Bulgaria","300":"Greece","191":"Croatia","688":"Serbia","804":"Ukraine","112":"Belarus","440":"Lithuania","428":"Latvia","233":"Estonia","705":"Slovenia","008":"Albania","807":"North Macedonia","070":"Bosnia and Herzegovina","499":"Montenegro","498":"Moldova","840":"United States","124":"Canada","484":"Mexico","076":"Brazil","032":"Argentina","170":"Colombia","152":"Chile","604":"Peru","862":"Venezuela","218":"Ecuador","068":"Bolivia","600":"Paraguay","858":"Uruguay","192":"Cuba","388":"Jamaica","332":"Haiti","214":"Dominican Republic","630":"Puerto Rico","320":"Guatemala","340":"Honduras","558":"Nicaragua","188":"Costa Rica","591":"Panama","780":"Trinidad and Tobago","566":"Nigeria","710":"South Africa","288":"Ghana","686":"Senegal","818":"Egypt","504":"Morocco","012":"Algeria","788":"Tunisia","231":"Ethiopia","404":"Kenya","834":"Tanzania","800":"Uganda","180":"Congo","024":"Angola","508":"Mozambique","716":"Zimbabwe","450":"Madagascar","120":"Cameroon","384":"Ivory Coast","466":"Mali","324":"Guinea","729":"Sudan","706":"Somalia","434":"Libya","894":"Zambia","646":"Rwanda","792":"Turkey","364":"Iran","682":"Saudi Arabia","368":"Iraq","376":"Israel","422":"Lebanon","760":"Syria","400":"Jordan","784":"United Arab Emirates","887":"Yemen","004":"Afghanistan","586":"Pakistan","356":"India","050":"Bangladesh","144":"Sri Lanka","524":"Nepal","764":"Thailand","704":"Vietnam","360":"Indonesia","458":"Malaysia","608":"Philippines","104":"Myanmar","116":"Cambodia","418":"Laos","702":"Singapore","392":"Japan","410":"South Korea","156":"China","158":"Taiwan","496":"Mongolia","398":"Kazakhstan","860":"Uzbekistan","268":"Georgia","051":"Armenia","031":"Azerbaijan","036":"Australia","554":"New Zealand","598":"Papua New Guinea"};
+    features.forEach(f=>{const n=nameMap[String(f.id).padStart(3,"0")];if(n)f.properties.name=n;});
+    geoFeatures=features;
+    buildGlobe();
+  })
+  .catch(()=>{container.innerHTML='<p style="padding:2rem;color:rgba(255,255,255,0.3);text-align:center;margin-top:40vh">Impossible de charger le globe.<br>Vérifie ta connexion internet.</p>';});
+
+
+// CURSOR AURA
+const aura = document.getElementById('cursor-aura');
+window.addEventListener('mousemove', e => {
+  aura.style.left = e.clientX + 'px';
+  aura.style.top  = e.clientY + 'px';
+});
+window.addEventListener('mouseleave', () => aura.style.opacity = '0');
+window.addEventListener('mouseenter', () => aura.style.opacity = '1');
+
+
+// ── SEARCH ────────────────────────────────────────────────────────────────────
+const searchInput = document.getElementById("search-input");
+const searchResults = document.getElementById("search-results");
+
+// Fuzzy match: normalize accents, allow partial/typo matching
+function normalize(str) {
+  return str.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9 ]/g, "");
+}
+
+// Simple fuzzy score: checks if all chars of query appear in order in target
+function fuzzyScore(query, target) {
+  const q = normalize(query), t = normalize(target);
+  if (t.includes(q)) return 100 - (t.indexOf(q)); // direct match = high score
+  // char-by-char subsequence
+  let qi = 0, score = 0;
+  for (let ti = 0; ti < t.length && qi < q.length; ti++) {
+    if (t[ti] === q[qi]) { score++; qi++; }
+  }
+  return qi === q.length ? score : 0;
+}
+
+function searchCountries(query) {
+  if (!query.trim()) return [];
+  return Object.keys(COUNTRIES)
+    .map(name => ({ name, score: fuzzyScore(query, name) }))
+    .filter(r => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6)
+    .map(r => r.name);
+}
+
+function renderResults(results) {
+  if (!results.length) { searchResults.style.display = "none"; return; }
+  searchResults.style.display = "flex";
+  searchResults.innerHTML = results.map(name => {
+    const flagSvg = FLAGS[name] ? FLAGS[name].replace(/`/g, "") : "";
+    return `<div class="search-item" data-country="${name}">
+      <span style="width:24px;height:16px;display:inline-flex;align-items:center;">${flagSvg}</span>
+      <span class="search-item-name">${name}</span>
+    </div>`;
+  }).join("");
+  searchResults.querySelectorAll(".search-item").forEach(el => {
+    el.addEventListener("click", () => {
+      const name = el.dataset.country;
+      selectCountryFromSearch(name);
+    });
+  });
+}
+
+function selectCountryFromSearch(name) {
+  const feature = geoFeatures.find(f => f.properties.name === name);
+  searchInput.value = name;
+  searchResults.style.display = "none";
+  searchInput.blur();
+
+  if (!feature) { showCountry(name); return; }
+
+  // Compute target rotation and zoom in one go — no callback chain
+  const centroid    = d3.geoCentroid(feature);
+  const targetRot   = [-centroid[0], -centroid[1]];
+  const area        = d3.geoArea(feature);
+  let zoomFactor;
+  if      (area < 0.00005) zoomFactor = 7.0;
+  else if (area < 0.0002)  zoomFactor = 5.5;
+  else if (area < 0.001)   zoomFactor = 4.2;
+  else if (area < 0.005)   zoomFactor = 3.2;
+  else if (area < 0.02)    zoomFactor = 2.5;
+  else if (area < 0.06)    zoomFactor = 2.0;
+  else if (area < 0.12)    zoomFactor = 1.6;
+  else                     zoomFactor = 1.3;
+  const targetScale = Math.min(maxScale, minScale * zoomFactor);
+
+  const startRot   = [...rotation];
+  const startScale = scale;
+  const dist       = angularDistance(startRot, targetRot);
+
+  animating = true;
+
+  function easeInOutQuart(t){ return t<0.5?8*t*t*t*t:1-Math.pow(-2*t+2,4)/2; }
+  function easeOutCubic(t)  { return 1-Math.pow(1-t,3); }
+
+  if (dist < 45) {
+    // SHORT: smooth pan + zoom in one pass
+    const dur = 1000 + dist * 8;
+    const t0  = performance.now();
+    (function step(now){
+      const raw = Math.min(1,(now-t0)/dur);
+      const t   = easeInOutQuart(raw);
+      rotation[0] = startRot[0]+(targetRot[0]-startRot[0])*t;
+      rotation[1] = startRot[1]+(targetRot[1]-startRot[1])*t;
+      scale        = startScale+(targetScale-startScale)*easeOutCubic(raw);
+      scale        = Math.max(minScale,Math.min(maxScale,scale));
+      globeUpdate(); updateSliderUI(false);
+      if(raw<1){ requestAnimationFrame(step); }
+      else { rotation[0]=targetRot[0];rotation[1]=targetRot[1];scale=targetScale;globeUpdate();updateSliderUI(false);showCountry(name);animating=false; }
+    })(t0);
+
+  } else {
+    // LONG: dezoom → rotate → rezoom, all in one animation loop
+    const midScale   = Math.max(minScale, minScale*1.1);
+    const dezoomDur  = 500;
+    const rotateDur  = 1400 + Math.min(dist*3.5, 900);
+    const pauseDur   = 200;
+    const rezoomDur  = 1100;
+    const total      = dezoomDur+rotateDur+pauseDur+rezoomDur;
+    const t0         = performance.now();
+
+    (function step(now){
+      const elapsed = now-t0;
+      if(elapsed < dezoomDur){
+        const t = easeOutCubic(elapsed/dezoomDur);
+        scale = startScale+(midScale-startScale)*t;
+        scale = Math.max(minScale,Math.min(maxScale,scale));
+        globeUpdate(); updateSliderUI(false);
+        requestAnimationFrame(step);
+      } else if(elapsed < dezoomDur+rotateDur){
+        const t = easeInOutQuart((elapsed-dezoomDur)/rotateDur);
+        rotation[0] = startRot[0]+(targetRot[0]-startRot[0])*t;
+        rotation[1] = startRot[1]+(targetRot[1]-startRot[1])*t;
+        scale = midScale;
+        globeUpdate(); updateSliderUI(false);
+        requestAnimationFrame(step);
+      } else if(elapsed < dezoomDur+rotateDur+pauseDur){
+        rotation[0]=targetRot[0]; rotation[1]=targetRot[1]; scale=midScale;
+        globeUpdate(); requestAnimationFrame(step);
+      } else if(elapsed < total){
+        const t = easeOutCubic((elapsed-dezoomDur-rotateDur-pauseDur)/rezoomDur);
+        scale = midScale+(targetScale-midScale)*t;
+        scale = Math.max(minScale,Math.min(maxScale,scale));
+        globeUpdate(); updateSliderUI(false);
+        requestAnimationFrame(step);
+      } else {
+        rotation[0]=targetRot[0]; rotation[1]=targetRot[1]; scale=targetScale;
+        globeUpdate(); updateSliderUI(false);
+        showCountry(name); animating=false;
+      }
+    })(t0);
+  }
+}
+
+function angularDistance(r1, r2) {
+  // Great-circle distance between two rotation targets (degrees)
+  const toRad = d => d * Math.PI / 180;
+  const lat1 = toRad(-r1[1]), lon1 = toRad(-r1[0]);
+  const lat2 = toRad(-r2[1]), lon2 = toRad(-r2[0]);
+  const dlat = lat2 - lat1, dlon = lon2 - lon1;
+  const a = Math.sin(dlat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dlon/2)**2;
+  return 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)) * 180 / Math.PI;
+}
+
+function animateRotation(target, callback) {
+  const startRot   = [...rotation];
+  const startScale = scale;
+  const targetScale = Math.min(maxScale, minScale * 3.2);
+  const dist = angularDistance(startRot, target);
+
+  // SHORT distance (< 45°): keep current zoom, just pan smoothly
+  if (dist < 45) {
+    const duration = 900 + dist * 8; // faster for closer countries
+    const startTime = performance.now();
+    function easeInOut(t){ return t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2; }
+    function stepShort(now) {
+      const raw = Math.min(1, (now - startTime) / duration);
+      const t = easeInOut(raw);
+      rotation[0] = startRot[0] + (target[0] - startRot[0]) * t;
+      rotation[1] = startRot[1] + (target[1] - startRot[1]) * t;
+      globeUpdate();
+      if (raw < 1) requestAnimationFrame(stepShort);
+      else { rotation[0]=target[0]; rotation[1]=target[1]; globeUpdate(); if(callback) callback(); }
+    }
+    requestAnimationFrame(stepShort);
+    return;
+  }
+
+  // LONG distance (>= 45°): dezoom → rotate → rezoom
+  const midScale   = Math.max(minScale, minScale * 1.1); // almost full out
+  const dezoomDur  = 600;
+  const rotateDur  = 1600 + Math.min(dist * 4, 800);    // proportional to distance
+  const pauseDur   = 250;
+  const rezoomDur  = 1200;
+  const total      = dezoomDur + rotateDur + pauseDur + rezoomDur;
+  const startTime  = performance.now();
+
+  function easeOutCubic(t)   { return 1 - Math.pow(1-t, 3); }
+  function easeInOutQuart(t) { return t<0.5 ? 8*t*t*t*t : 1-Math.pow(-2*t+2,4)/2; }
+  function easeInCubic(t)    { return t*t*t; }
+
+  function stepLong(now) {
+    const elapsed = now - startTime;
+
+    if (elapsed < dezoomDur) {
+      // Phase 1: dezoom smoothly
+      const t = easeOutCubic(elapsed / dezoomDur);
+      scale = startScale + (midScale - startScale) * t;
+      scale = Math.max(minScale, Math.min(maxScale, scale));
+      globeUpdate(); updateSliderUI(false);
+      requestAnimationFrame(stepLong);
+
+    } else if (elapsed < dezoomDur + rotateDur) {
+      // Phase 2: rotate at dezoom level
+      const t = easeInOutQuart((elapsed - dezoomDur) / rotateDur);
+      rotation[0] = startRot[0] + (target[0] - startRot[0]) * t;
+      rotation[1] = startRot[1] + (target[1] - startRot[1]) * t;
+      scale = midScale;
+      globeUpdate(); updateSliderUI(false);
+      requestAnimationFrame(stepLong);
+
+    } else if (elapsed < dezoomDur + rotateDur + pauseDur) {
+      // Pause
+      rotation[0] = target[0]; rotation[1] = target[1];
+      scale = midScale;
+      globeUpdate();
+      requestAnimationFrame(stepLong);
+
+    } else if (elapsed < total) {
+      // Phase 3: rezoom gently
+      const t = easeOutCubic((elapsed - dezoomDur - rotateDur - pauseDur) / rezoomDur);
+      scale = midScale + (targetScale - midScale) * t;
+      scale = Math.max(minScale, Math.min(maxScale, scale));
+      globeUpdate(); updateSliderUI(false);
+      requestAnimationFrame(stepLong);
+
+    } else {
+      rotation[0] = target[0]; rotation[1] = target[1];
+      scale = targetScale;
+      globeUpdate(); updateSliderUI(false);
+      if (callback) callback();
+    }
+  }
+  requestAnimationFrame(stepLong);
+}
+
+searchInput.addEventListener("input", () => {
+  const results = searchCountries(searchInput.value);
+  renderResults(results);
+});
+searchInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    const results = searchCountries(searchInput.value);
+    if (results.length) selectCountryFromSearch(results[0]);
+  }
+  if (e.key === "Escape") {
+    searchResults.style.display = "none";
+    searchInput.blur();
+  }
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest("#search-wrap")) searchResults.style.display = "none";
+});
+
+
+
+// ── KEYBOARD SHORTCUTS ────────────────────────────────────────────────────────
+document.addEventListener("keydown", e => {
+  // Ignore when typing in search
+  if (document.activeElement === searchInput) return;
+
+  if (e.key === "o" || e.key === "O") {
+    const btn = document.getElementById("zoom-reset");
+    if (btn) {
+      btn.click();
+      // After dezoom animation (1000ms), re-trigger idle timer check
+      setTimeout(() => {
+        if (typeof resetIdleTimer === "function") resetIdleTimer();
+      }, 1100);
+    }
+  }
+});
+
+
+// ── INTRO ─────────────────────────────────────────────────────────────────────
+(function(){
+  const overlay   = document.getElementById("intro-overlay");
+  const globeWrap = document.getElementById("intro-globe-wrap");
+  const titleEl   = document.getElementById("intro-title");
+  const hintEl    = document.getElementById("intro-hint");
+  const welcome   = document.getElementById("welcome-banner");
+
+  // Replace canvas with SVG for D3 globe
+  const canvas = document.getElementById("intro-globe-canvas");
+  canvas.remove();
+  const svgIntro = d3.select("#intro-globe-wrap")
+    .insert("svg", "#intro-title")
+    .attr("id","intro-svg");
+
+  // Match intro globe size to main globe minScale so zoom is coherent
+  const mainMinScale = Math.min(window.innerWidth, window.innerHeight) * 0.40;
+  const SIZE = mainMinScale * 2; // diameter = 2 * minScale
+  const R    = SIZE / 2;
+  svgIntro
+    .attr("width",  SIZE).attr("height", SIZE)
+    .style("display","block");
+
+  document.getElementById("intro-ring").style.width  = (SIZE + 28) + "px";
+  document.getElementById("intro-ring").style.height = (SIZE + 28) + "px";
+  document.getElementById("intro-ring2").style.width  = (SIZE + 60) + "px";
+  document.getElementById("intro-ring2").style.height = (SIZE + 60) + "px";
+
+  // Hide the HTML title — we'll draw arc text on SVG
+  titleEl.style.display = "none";
+
+  // D3 projection
+  let introRot = [0, -30];
+  const introPrj  = d3.geoOrthographic()
+    .scale(R - 2).translate([R, R]).rotate(introRot).clipAngle(90);
+  const introPath = d3.geoPath().projection(introPrj);
+
+  // Build globe layers
+  svgIntro.append("circle").attr("id","ig-ring2")
+    .attr("cx",R).attr("cy",R).attr("r",R+1)
+    .attr("fill","none").attr("stroke","rgba(255,255,255,0.07)").attr("stroke-width",4);
+
+  svgIntro.append("circle")
+    .attr("cx",R).attr("cy",R).attr("r",R-1).attr("fill","#080808");
+
+  svgIntro.append("path").attr("id","ig-grat")
+    .datum(d3.geoGraticule()())
+    .attr("fill","none").attr("stroke","rgba(255,255,255,0.05)").attr("stroke-width",0.5);
+
+  svgIntro.append("g").attr("id","ig-countries");
+
+  svgIntro.append("circle").attr("id","ig-border")
+    .attr("cx",R).attr("cy",R).attr("r",R-1)
+    .attr("fill","none").attr("stroke","rgba(255,255,255,0.22)").attr("stroke-width",0.8);
+
+
+
+  // defs not needed without arc text
+
+  // no arc text on intro globe
+
+  let introRAF = null;
+  let dismissed = false;
+  let geoLoaded = false;
+
+  function updateIntroGlobe() {
+    introPath.projection(introPrj.rotate(introRot));
+    svgIntro.select("#ig-grat").attr("d", introPath);
+    svgIntro.select("#ig-countries").selectAll("path").attr("d", introPath);
+  }
+
+  function animateIntro() {
+    introRot[0] += 0.18;
+    introPrj.rotate(introRot);
+    updateIntroGlobe();
+    introRAF = requestAnimationFrame(animateIntro);
+  }
+
+  // Load geo data (reuse if already loaded)
+  function startIntro(features) {
+    const countries = svgIntro.select("#ig-countries");
+    countries.selectAll("path")
+      .data(features).enter().append("path")
+      .attr("fill","rgba(255,255,255,0.07)")
+      .attr("stroke","rgba(255,255,255,0.5)")
+      .attr("stroke-width","0.35");
+    updateIntroGlobe();
+    animateIntro();
+  }
+
+  if (geoFeatures.length) {
+    startIntro(geoFeatures);
+  } else {
+    // Wait for main globe data to load
+    const waitGeo = setInterval(() => {
+      if (geoFeatures.length) { clearInterval(waitGeo); startIntro(geoFeatures); }
+    }, 100);
+  }
+
+  function dismiss() {
+    if (dismissed) return;
+    dismissed = true;
+
+    hintEl.classList.add("hint-fade-out");
+    cancelAnimationFrame(introRAF);
+
+    // Phase 1: progressive acceleration — 2200ms ramp, then fade globe
+    let speed = 0.18;
+    let t0 = performance.now();
+    let globeOpacity = 1;
+    const ACCEL_DUR  = 2200; // ms to reach max speed
+    const FADE_START = 1800; // ms before starting fade
+    const FADE_DUR   = 600;
+
+    function fastSpin(now) {
+      const elapsed = now - t0;
+      // Ease-in acceleration on longitude axis only
+      const accelT = Math.min(elapsed / ACCEL_DUR, 1);
+      speed = 0.18 + accelT * accelT * 16; // quadratic ease-in to ~16deg/frame
+      introRot[0] += speed;
+      introPrj.rotate(introRot);
+      updateIntroGlobe();
+
+      // Fade globe out after FADE_START
+      if (elapsed > FADE_START) {
+        globeOpacity = Math.max(0, 1 - (elapsed - FADE_START) / FADE_DUR);
+        svgIntro.style("opacity", globeOpacity);
+        hintEl.style.opacity = globeOpacity * 0.4;
+      }
+
+      if (globeOpacity > 0) {
+        requestAnimationFrame(fastSpin);
+      } else {
+        // Globe faded — overlay stays black, show CARTE SON
+        svgIntro.style("display","none");
+        overlay.style.background = "#000";
+        overlay.style.opacity    = "1";
+
+        // Show CARTE SON fullscreen on black
+        welcome.style.display = "flex";
+        welcome.style.opacity  = "0";
+        // Force reflow before adding class
+        void welcome.offsetWidth;
+        welcome.classList.add("phase1");
+
+        // After CARTE SON is visible, fade site in behind
+        setTimeout(() => {
+          overlay.style.display = "none";
+          document.getElementById("app").classList.add("visible");
+        }, 1800);
+
+        // Then fade CARTE SON out
+        setTimeout(() => {
+          welcome.classList.remove("phase1");
+          welcome.classList.add("phase2");
+          setTimeout(() => {
+            welcome.style.display = "none";
+          }, 1000);
+        }, 3200);
+      }
+    }
+    requestAnimationFrame(fastSpin);
+  }
+
+  overlay.addEventListener("click", dismiss);
+  document.addEventListener("keydown", e => {
+    if (e.code === "Space" && !dismissed) { e.preventDefault(); dismiss(); }
+  });
+})();
+
+
+// ── IDLE AUTO-SPIN ────────────────────────────────────────────────────────────
+(function(){
+  const IDLE_DELAY  = 5000;  // 5s inactivity
+  const IDLE_SPEED  = 0.12;  // degrees per frame — slow and elegant
+  const ZOOM_THRESH = 1.05;  // must be at most 5% above minScale
+
+  let idleTimer   = null;
+  let idleRAF     = null;
+  let isIdleSpinning = false;
+
+  function isAtMinZoom() {
+    return scale <= minScale * ZOOM_THRESH;
+  }
+
+  function startIdleSpin() {
+    if (isIdleSpinning) return;
+    if (!isAtMinZoom()) return;
+    isIdleSpinning = true;
+
+    function spinStep() {
+      if (!isIdleSpinning) return;
+      rotation[0] += IDLE_SPEED;
+      globeUpdate();
+      idleRAF = requestAnimationFrame(spinStep);
+    }
+    idleRAF = requestAnimationFrame(spinStep);
+  }
+
+  function stopIdleSpin() {
+    if (!isIdleSpinning) return;
+    isIdleSpinning = false;
+    cancelAnimationFrame(idleRAF);
+    idleRAF = null;
+  }
+
+  window.resetIdleTimer = function resetIdleTimer() {
+    stopIdleSpin();
+    clearTimeout(idleTimer);
+    // Only schedule idle spin if at min zoom
+    if (isAtMinZoom()) {
+      idleTimer = setTimeout(startIdleSpin, IDLE_DELAY);
+    }
+  };
+
+  // Listen to all user interactions
+  ["mousemove","mousedown","wheel","keydown","touchstart","touchmove"].forEach(evt => {
+    window.addEventListener(evt, window.resetIdleTimer, { passive: true });
+  });
+
+  // Also stop spin immediately on any interaction
+  ["mousedown","wheel","keydown","touchstart"].forEach(evt => {
+    window.addEventListener(evt, stopIdleSpin, { passive: true });
+  });
+
+  // When zoom changes (e.g. after click-zoom), re-evaluate
+  const origGlobeUpdate = globeUpdate;
+  window._checkIdleZoom = function() {
+    if (!isAtMinZoom()) {
+      stopIdleSpin();
+      clearTimeout(idleTimer);
+    }
+  };
+
+  // Check zoom after each globeUpdate via interval (lightweight)
+  setInterval(() => {
+    if (isIdleSpinning && !isAtMinZoom()) stopIdleSpin();
+  }, 500);
+
+  // Kick off the initial timer
+  resetIdleTimer();
+})();
+
+
+// ── COMPLETION TRACKER ───────────────────────────────────────────────────────
+function updateCompletion() {
+  const total    = Object.keys(COUNTRIES).length;
+  const done     = Object.keys(COUNTRIES).filter(n => COUNTRIES[n].links.apple || COUNTRIES[n].links.soundcloud);
+  const notDone  = Object.keys(COUNTRIES).filter(n => !COUNTRIES[n].links.apple);
+  const pct      = Math.round((done.length / total) * 100);
+
+  document.getElementById("completion-pct").textContent  = pct + "%";
+  document.getElementById("completion-fill").style.width = pct + "%";
+
+  // Build dropdown
+  const dd = document.getElementById("completion-dropdown");
+  let html = `<div class="dropdown-header">${done.length} / ${total} pays complétés</div>`;
+
+  if(done.length > 0){
+    html += `<div class="dropdown-section">✓ Complétés</div>`;
+    done.sort().forEach(name => {
+      const flag = FLAGS[name] ? `<span class="di-flag">${FLAGS[name]}</span>` : "";
+      html += `<div class="dropdown-item" data-country="${name}">
+        ${flag}
+        <span class="di-name">${name}</span>
+        <span class="di-dot"></span>
+      </div>`;
+    });
+  }
+
+  if(notDone.length > 0 && done.length > 0){
+    html += `<div class="dropdown-section">— À compléter</div>`;
+    notDone.sort().forEach(name => {
+      const flag = FLAGS[name] ? `<span class="di-flag">${FLAGS[name]}</span>` : "";
+      html += `<div class="dropdown-item" data-country="${name}" style="opacity:0.35">
+        ${flag}
+        <span class="di-name">${name}</span>
+      </div>`;
+    });
+  }
+
+  dd.innerHTML = html;
+
+  // Click on item → navigate to country
+  dd.querySelectorAll(".dropdown-item").forEach(el => {
+    el.addEventListener("click", e => {
+      e.stopPropagation();
+      const name = el.dataset.country;
+      dd.classList.remove("open");
+      selectCountryFromSearch(name);
+    });
+  });
+}
+updateCompletion();
+
+// Toggle dropdown
+document.getElementById("completion").addEventListener("click", e => {
+  e.stopPropagation();
+  document.getElementById("completion-dropdown").classList.toggle("open");
+});
+document.addEventListener("click", () => {
+  document.getElementById("completion-dropdown").classList.remove("open");
+});
+
+
+// ── FULLSCREEN ────────────────────────────────────────────────────────────────
+document.addEventListener("keydown", e => {
+  if (document.activeElement === searchInput) return;
+  if (e.key === "f" || e.key === "F") {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+  }
+});
+
+window.addEventListener("resize",()=>{scale=null;buildGlobe();});
+</script>
+</body>
+</html>
