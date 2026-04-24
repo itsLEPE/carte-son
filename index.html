@@ -536,6 +536,10 @@ body { cursor: default; }
     font-size: 10px; color: rgba(255,255,255,0.2);
     letter-spacing: 0.06em; text-align: center; padding: 8px 0;
   }
+
+  .vinyl-stars {
+    font-size: 9px; color: rgba(255,255,255,0.5); letter-spacing: 1px;
+  }
 </style>
 </head>
 <body>
@@ -1300,7 +1304,10 @@ toggleEl.addEventListener('click', async () => {
             <div class="vinyl-info">
               <div class="vinyl-title">${v.title}</div>
               <div class="vinyl-artist">${v.artist}</div>
-              <div class="vinyl-year">${v.year || ''}</div>
+              <div style="display:flex;justify-content:flex-end;align-items:center;gap:4px;margin-top:2px">
+                ${v.stars ? '★'.repeat(v.stars) + '☆'.repeat(5-v.stars) : ''}
+                ${v.year ? `<span class="vinyl-year">${v.year}</span>` : ''}
+              </div>
             </div>
           </div>`).join('');
       }
@@ -1954,7 +1961,8 @@ let discogsCache = null; // full collection cache
 
 async function fetchDiscogsCollection() {
   if (discogsCache) return discogsCache;
-  // Step 1: get all releases from collection
+  // Fetch collection with notes — country is in notes field
+  // Format: "Country : France | stars:4"
   let all = [], page = 1, pages = 1;
   while (page <= pages) {
     const apiUrl = `https://api.discogs.com/users/${DISCOGS_USER}/collection/folders/0/releases?token=${DISCOGS_TOKEN}&per_page=100&page=${page}`;
@@ -1965,26 +1973,21 @@ async function fetchDiscogsCollection() {
     page++;
   }
 
-  // Step 2: fetch country for each release individually (batched, 3 at a time)
-  async function fetchReleaseCountry(releaseId) {
-    try {
-      const url = `https://api.discogs.com/releases/${releaseId}?token=${DISCOGS_TOKEN}`;
-      const res = await fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`);
-      const data = await res.json();
-      return data.country || null;
-    } catch(e) { return null; }
-  }
-
-  // One request at a time with 1.1s delay = ~54 req/min (under 60 limit)
-  for (let i = 0; i < all.length; i++) {
-    const country = await fetchReleaseCountry(all[i].basic_information.id);
-    all[i].basic_information.country = country;
-    if (i + 1 < all.length) await new Promise(r => setTimeout(r, 1100));
-  }
+  // Parse country and stars from notes field
+  all.forEach(r => {
+    const notes = r.notes || "";
+    // Match "Country : France" (case insensitive, flexible spaces)
+    const countryMatch = notes.match(/country\s*:\s*([^|\n]+)/i);
+    if (countryMatch) r.basic_information.country = countryMatch[1].trim();
+    // Match "stars:4" or "stars : 4"
+    const starsMatch = notes.match(/stars\s*:\s*(\d)/i);
+    r.basic_information.stars = starsMatch ? parseInt(starsMatch[1]) : null;
+  });
 
   discogsCache = all;
-  const foundCountries = [...new Set(all.map(r => r.basic_information.country || "N/A"))].sort();
-  console.log("🎵 Countries after detail fetch:", foundCountries);
+  const found = [...new Set(all.map(r => r.basic_information.country || "N/A"))].sort();
+  console.log("🎵 Countries from notes:", found);
+  console.log("🎵 Total:", all.length);
   return all;
 }
 
@@ -2016,7 +2019,8 @@ async function getVinylsForCountry(countryName) {
     title:  r.basic_information.title,
     artist: r.basic_information.artists[0]?.name || "?",
     year:   r.basic_information.year,
-    cover:  r.basic_information.cover_image
+    cover:  r.basic_information.cover_image,
+    stars:  r.basic_information.stars
   }));
 }
 
