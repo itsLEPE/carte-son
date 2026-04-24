@@ -1306,7 +1306,7 @@ toggleEl.addEventListener('click', async () => {
         listEl.innerHTML = '<div class="vinyl-loading">aucun vinyle</div>';
       } else {
         listEl.innerHTML = vinyls.map(v => `
-          <a class="vinyl-item" href="${v.url}" target="_blank" rel="noopener" title="Voir sur Discogs">
+          <div class="vinyl-item" onclick="window.open('${v.url}','_blank')" title="Voir sur Discogs" style="cursor:pointer">
             <div class="vinyl-cover">
               ${v.cover ? `<img src="${v.cover}" loading="lazy"/>` : '<div class="vinyl-cover-placeholder">🖤</div>'}
             </div>
@@ -1318,7 +1318,7 @@ toggleEl.addEventListener('click', async () => {
                 ${v.year ? `<span class="vinyl-year">${v.year}</span>` : ''}
               </div>
             </div>
-          </a>`).join('');
+          </div>`).join('');
       }
     } catch(e) {
       listEl.innerHTML = '<div class="vinyl-loading">erreur de chargement</div>';
