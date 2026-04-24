@@ -1974,14 +1974,19 @@ async function fetchDiscogsCollection() {
   }
 
   // Parse country and stars from notes field
+  // Discogs notes is an array of {field_id, value} objects
   all.forEach(r => {
-    const notes = r.notes || "";
-    // Match "Country : France" (case insensitive, flexible spaces)
-    const countryMatch = notes.match(/country\s*:\s*([^|\n]+)/i);
+    let notesText = "";
+    if (typeof r.notes === "string") {
+      notesText = r.notes;
+    } else if (Array.isArray(r.notes)) {
+      notesText = r.notes.map(n => n.value || "").join(" ");
+    }
+    const countryMatch = notesText.match(/country\s*:\s*([^|\n,]+)/i);
     if (countryMatch) r.basic_information.country = countryMatch[1].trim();
-    // Match "stars:4" or "stars : 4"
-    const starsMatch = notes.match(/stars\s*:\s*(\d)/i);
+    const starsMatch = notesText.match(/stars\s*:\s*(\d)/i);
     r.basic_information.stars = starsMatch ? parseInt(starsMatch[1]) : null;
+    console.log("📀", r.basic_information.title, "| notes:", notesText, "| country:", r.basic_information.country);
   });
 
   discogsCache = all;
