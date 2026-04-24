@@ -497,11 +497,18 @@ body { cursor: default; }
   .vinyl-list {
     display: none; flex-direction: column; gap: 8px;
     padding-bottom: 4px;
+    max-height: 320px; overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent;
   }
   .vinyl-list.open { display: flex; }
   .vinyl-item {
     display: flex; align-items: center; gap: 10px;
+    text-decoration: none; cursor: pointer;
+    border-radius: 8px; padding: 4px;
+    margin: 0 -4px;
+    transition: background 0.15s;
   }
+  .vinyl-item:hover { background: rgba(255,255,255,0.05); }
   .vinyl-cover {
     width: 42px; height: 42px; border-radius: 4px;
     background: rgba(255,255,255,0.05);
@@ -1297,7 +1304,7 @@ toggleEl.addEventListener('click', async () => {
         listEl.innerHTML = '<div class="vinyl-loading">aucun vinyle</div>';
       } else {
         listEl.innerHTML = vinyls.map(v => `
-          <div class="vinyl-item">
+          <a class="vinyl-item" href="${v.url}" target="_blank" rel="noopener" title="Voir sur Discogs">
             <div class="vinyl-cover">
               ${v.cover ? `<img src="${v.cover}" loading="lazy"/>` : '<div class="vinyl-cover-placeholder">🖤</div>'}
             </div>
@@ -1305,11 +1312,11 @@ toggleEl.addEventListener('click', async () => {
               <div class="vinyl-title">${v.title}</div>
               <div class="vinyl-artist">${v.artist}</div>
               <div style="display:flex;justify-content:flex-end;align-items:center;gap:4px;margin-top:2px">
-                ${v.stars ? '★'.repeat(v.stars) + '☆'.repeat(5-v.stars) : ''}
+                ${v.stars ? `<span style="font-size:9px;color:rgba(255,255,255,0.5);letter-spacing:1px">${'★'.repeat(v.stars)}${'☆'.repeat(5-v.stars)}</span>` : ''}
                 ${v.year ? `<span class="vinyl-year">${v.year}</span>` : ''}
               </div>
             </div>
-          </div>`).join('');
+          </a>`).join('');
       }
     } catch(e) {
       listEl.innerHTML = '<div class="vinyl-loading">erreur de chargement</div>';
