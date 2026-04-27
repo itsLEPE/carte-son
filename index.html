@@ -449,6 +449,7 @@ html, body {
 <body>
 
 <div id="intro-overlay">
+  <canvas id="intro-stars"></canvas>
   <div id="intro-globe-wrap">
     <div id="intro-ring"></div>
     <div id="intro-ring2"></div>
@@ -1008,6 +1009,34 @@ function buildGlobe(){
     .attr("cx",W/2).attr("cy",H/2).attr("r",scale)
     .attr("fill","none").attr("stroke","rgba(255,255,255,0.22)").attr("stroke-width",0.8);
 
+  // City lights — warm glow on countries with playlists
+  const lightsG = svgEl.append("g").attr("id","city-lights");
+  geoFeatures.forEach(f => {
+    const name = f.properties.name;
+    if (!COUNTRIES[name] || !COUNTRIES[name].links.apple) return;
+    try {
+      const centroid = d3.geoCentroid(f);
+      const projected = proj(centroid);
+      if (!projected) return;
+      // Check if on visible side
+      const visible = d3.geoContains({type:"Sphere"}, centroid);
+      const defs2 = svgEl.select("defs").empty() ? svgEl.append("defs") : svgEl.select("defs");
+      const gid = "lg_" + name.replace(/[^a-z]/gi,'_');
+      const rg = defs2.append("radialGradient").attr("id", gid)
+        .attr("cx","50%").attr("cy","50%").attr("r","50%");
+      rg.append("stop").attr("offset","0%").attr("stop-color","#FFA040").attr("stop-opacity","0.7");
+      rg.append("stop").attr("offset","40%").attr("stop-color","#FF8020").attr("stop-opacity","0.25");
+      rg.append("stop").attr("offset","100%").attr("stop-color","#FF6010").attr("stop-opacity","0");
+      const area = d3.geoArea(f);
+      const glowR = Math.max(8, Math.min(28, 6 + Math.sqrt(area) * 180));
+      lightsG.append("circle")
+        .attr("cx", projected[0]).attr("cy", projected[1])
+        .attr("r", glowR)
+        .attr("fill", `url(#${gid})`)
+        .attr("pointer-events","none");
+    } catch(e) {}
+  });
+
   setupInteraction();
   updateSliderUI(false);
 }
@@ -1022,6 +1051,20 @@ function globeUpdate(){
   svgEl.selectAll(".country").attr("d",pathFn);
   svgEl.select("#mesh").attr("d", pathFn);
   svgEl.select("#coast").attr("d", pathFn);
+  // Re-project city lights
+  svgEl.select("#city-lights").selectAll("circle").each(function(d, i) {
+    const f = geoFeatures.filter(f => {
+      const n = f.properties.name;
+      return COUNTRIES[n] && COUNTRIES[n].links.apple;
+    })[i];
+    if (!f) return;
+    try {
+      const projected = proj(d3.geoCentroid(f));
+      if (projected) {
+        d3.select(this).attr("cx", projected[0]).attr("cy", projected[1]);
+      }
+    } catch(e) {}
+  });
 }
 
 function setupInteraction(){
@@ -1956,7 +1999,7 @@ async function getVinylsForCountry(countryName) {
             :               Math.random() * 2.2 + 0.8;
     // Stars fully turn ON and OFF — min near 0, max near 1
     const minA = layer === 0 ? 0.0  : layer === 1 ? 0.0  : 0.0;
-    const maxA = layer === 0 ? 0.55 : layer === 1 ? 0.85 : 1.0;
+    const maxA = layer === 0 ? 0.28 : layer === 1 ? 0.52 : 0.78;
     return {
       x: Math.random() * window.innerWidth,
       y: Math.random() * window.innerHeight,
@@ -2031,7 +2074,7 @@ async function getVinylsForCountry(countryName) {
       if (s.pulsing) {
         s.pulseLife += 0.045 * dt;
         const pf = Math.sin(s.pulseLife * Math.PI);
-        a = Math.min(1, a + pf * 1.0); // full brightness flash
+        a = Math.min(0.9, a + pf * 0.5);
         if (s.pulseLife >= 1) { s.pulsing = false; s.pulseInterval = 100 + Math.random() * 500; }
       }
 
@@ -2043,9 +2086,9 @@ async function getVinylsForCountry(countryName) {
 
       // Glow halo on bright stars
       if (a > 0.5) {
-        const glowR = s.r * (3 + (a - 0.5) * 6);
+        const glowR = s.r * (2 + (a - 0.5) * 3);
         const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, glowR);
-        glow.addColorStop(0, `rgba(255,255,255,${(a * 0.4).toFixed(3)})`);
+        glow.addColorStop(0, `rgba(255,255,255,${(a * 0.18).toFixed(3)})`);
         glow.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.beginPath(); ctx.arc(s.x, s.y, glowR, 0, Math.PI * 2);
         ctx.fillStyle = glow; ctx.fill();
@@ -2090,6 +2133,41 @@ async function getVinylsForCountry(countryName) {
     requestAnimationFrame(draw);
   }
   requestAnimationFrame(draw);
+})();
+
+
+// ── INTRO STARFIELD ───────────────────────────────────────────────────────────
+(function(){
+  const ic = document.getElementById('intro-stars');
+  if (!ic) return;
+  const ctx = ic.getContext('2d');
+  ic.width  = window.innerWidth;
+  ic.height = window.innerHeight;
+
+  const stars = Array.from({length: 400}, () => ({
+    x: Math.random() * ic.width, y: Math.random() * ic.height,
+    r: Math.random() * 1.4 + 0.1,
+    minA: 0, maxA: Math.random() * 0.6 + 0.1,
+    phase: Math.random() * Math.PI * 2,
+    speed: Math.random() * 0.04 + 0.008,
+  }));
+
+  let alive = true;
+  document.getElementById('intro-overlay').addEventListener('click', () => { alive = false; });
+
+  function drawIntroStars(now) {
+    if (!alive) return;
+    ctx.clearRect(0, 0, ic.width, ic.height);
+    stars.forEach(s => {
+      s.phase += s.speed;
+      const t = (Math.sin(s.phase) + 1) / 2;
+      const a = s.minA + t * (s.maxA - s.minA);
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`; ctx.fill();
+    });
+    requestAnimationFrame(drawIntroStars);
+  }
+  requestAnimationFrame(drawIntroStars);
 })();
 
 window.addEventListener("resize",()=>{scale=null;buildGlobe();});
