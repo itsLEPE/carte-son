@@ -1950,109 +1950,145 @@ async function getVinylsForCountry(countryName) {
   resize();
   window.addEventListener('resize', resize);
 
-  // Stars
-  const STAR_COUNT = 280;
-  const stars = Array.from({length: STAR_COUNT}, () => ({
-    x:       Math.random() * window.innerWidth,
-    y:       Math.random() * window.innerHeight,
-    r:       Math.random() * 1.2 + 0.2,
-    baseAlpha: Math.random() * 0.6 + 0.1,
-    alpha:   0,
-    phase:   Math.random() * Math.PI * 2,
-    speed:   Math.random() * 0.008 + 0.002,  // twinkle speed
-  }));
-  // Init alpha
-  stars.forEach(s => s.alpha = s.baseAlpha);
+  // 3 layers of stars — background (tiny/slow), mid, foreground (bigger/fast twinkle)
+  function makeStar(layer) {
+    return {
+      x:     Math.random() * window.innerWidth,
+      y:     Math.random() * window.innerHeight,
+      r:     layer === 0 ? Math.random() * 0.6 + 0.1
+           : layer === 1 ? Math.random() * 0.9 + 0.3
+           :               Math.random() * 1.4 + 0.5,
+      baseAlpha: layer === 0 ? Math.random() * 0.25 + 0.05
+               : layer === 1 ? Math.random() * 0.45 + 0.15
+               :               Math.random() * 0.7  + 0.2,
+      phase: Math.random() * Math.PI * 2,
+      // Twinkle speed — foreground stars twinkle fast, bg slow
+      twinkleSpeed: layer === 0 ? Math.random() * 0.006 + 0.001
+                  : layer === 1 ? Math.random() * 0.018 + 0.004
+                  :               Math.random() * 0.045 + 0.015,
+      // Drift — very slow parallax movement
+      vx: (Math.random() - 0.5) * (layer === 0 ? 0.015 : layer === 1 ? 0.03 : 0.06),
+      vy: (Math.random() - 0.5) * (layer === 0 ? 0.01  : layer === 1 ? 0.02 : 0.04),
+      // Pulse: some stars do a big brightness flash occasionally
+      pulseTimer: Math.random() * 400,
+      pulseInterval: 180 + Math.random() * 600,
+      pulsing: false, pulseLife: 0,
+    };
+  }
+
+  const stars = [
+    ...Array.from({length: 300}, () => makeStar(0)), // bg
+    ...Array.from({length: 180}, () => makeStar(1)), // mid
+    ...Array.from({length: 70},  () => makeStar(2)), // fg
+  ];
 
   // Shooting stars
   const shooters = [];
 
   function spawnShooter() {
-    // Start from random edge (top or left-ish)
-    const fromTop = Math.random() > 0.4;
-    const angle   = fromTop
-      ? (Math.PI * 0.15) + Math.random() * (Math.PI * 0.2)   // mostly diagonal down-right
-      : (Math.PI * 0.05) + Math.random() * (Math.PI * 0.15);
-
+    const fromTop = Math.random() > 0.35;
+    const angle = fromTop
+      ? Math.PI * 0.12 + Math.random() * Math.PI * 0.22
+      : Math.PI * 0.04 + Math.random() * Math.PI * 0.12;
+    const speed = 5 + Math.random() * 10;
     shooters.push({
-      x:     fromTop ? Math.random() * W : -20,
-      y:     fromTop ? -20 : Math.random() * H * 0.5,
-      vx:    Math.cos(angle) * (6 + Math.random() * 8),
-      vy:    Math.sin(angle) * (6 + Math.random() * 8),
-      len:   80 + Math.random() * 120,
-      alpha: 0,
-      life:  0,     // 0→1
-      dead:  false,
+      x:    fromTop ? Math.random() * W * 1.2 - W * 0.1 : -30,
+      y:    fromTop ? -30 : Math.random() * H * 0.6,
+      vx:   Math.cos(angle) * speed,
+      vy:   Math.sin(angle) * speed,
+      len:  60 + Math.random() * 160,
+      life: 0, alpha: 0,
     });
   }
 
-  // Spawn shooting stars occasionally
-  setInterval(() => {
-    if (Math.random() < 0.55) spawnShooter(); // ~55% chance every interval
-  }, 3200);
-
-  // First one after a short delay
-  setTimeout(spawnShooter, 1800);
+  // Varied intervals — sometimes a burst of 2
+  function scheduleShooter() {
+    const delay = 1500 + Math.random() * 4000;
+    setTimeout(() => {
+      spawnShooter();
+      if (Math.random() < 0.3) setTimeout(spawnShooter, 200 + Math.random() * 400);
+      scheduleShooter();
+    }, delay);
+  }
+  setTimeout(() => { spawnShooter(); scheduleShooter(); }, 1200);
 
   let lastTime = 0;
   function draw(now) {
-    const dt = Math.min((now - lastTime) / 16.67, 3); // normalized to 60fps
+    const dt = Math.min((now - lastTime) / 16.67, 3);
     lastTime = now;
-
     ctx.clearRect(0, 0, W, H);
 
-    // Draw stars with twinkle
     stars.forEach(s => {
-      s.phase += s.speed * dt;
-      s.alpha  = s.baseAlpha * (0.5 + 0.5 * Math.sin(s.phase));
+      // Twinkle
+      s.phase += s.twinkleSpeed * dt;
+      let a = s.baseAlpha * (0.45 + 0.55 * Math.sin(s.phase));
+
+      // Occasional pulse flash
+      s.pulseTimer += dt;
+      if (!s.pulsing && s.pulseTimer > s.pulseInterval) {
+        s.pulsing = true; s.pulseLife = 0; s.pulseTimer = 0;
+      }
+      if (s.pulsing) {
+        s.pulseLife += 0.06 * dt;
+        const pf = Math.sin(s.pulseLife * Math.PI); // 0→1→0
+        a = Math.min(1, a + pf * 0.8);
+        if (s.pulseLife >= 1) { s.pulsing = false; s.pulseInterval = 200 + Math.random() * 600; }
+      }
+
+      // Drift
+      s.x += s.vx * dt;
+      s.y += s.vy * dt;
+      if (s.x < -2) s.x = W + 2;
+      if (s.x > W + 2) s.x = -2;
+      if (s.y < -2) s.y = H + 2;
+      if (s.y > H + 2) s.y = -2;
+
+      // Draw — pulsing stars get a soft glow
+      if (s.pulsing && s.pulseLife < 1) {
+        const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 5);
+        glow.addColorStop(0, `rgba(255,255,255,${Math.min(0.9, a).toFixed(3)})`);
+        glow.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.r * 5, 0, Math.PI * 2);
+        ctx.fillStyle = glow;
+        ctx.fill();
+      }
+
       ctx.beginPath();
       ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255,255,255,${s.alpha.toFixed(3)})`;
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(1, a).toFixed(3)})`;
       ctx.fill();
     });
 
-    // Draw shooting stars
+    // Shooting stars
     for (let i = shooters.length - 1; i >= 0; i--) {
       const s = shooters[i];
-      s.life += 0.018 * dt;
-
-      // Fade in then fade out
-      if      (s.life < 0.15) s.alpha = s.life / 0.15;
-      else if (s.life < 0.7)  s.alpha = 1;
-      else                    s.alpha = Math.max(0, 1 - (s.life - 0.7) / 0.3);
-
+      s.life += 0.016 * dt;
+      s.alpha = s.life < 0.12 ? s.life / 0.12
+              : s.life < 0.65 ? 1
+              : Math.max(0, 1 - (s.life - 0.65) / 0.35);
       if (s.life >= 1) { shooters.splice(i, 1); continue; }
+      s.x += s.vx * dt; s.y += s.vy * dt;
 
-      s.x += s.vx * dt;
-      s.y += s.vy * dt;
-
-      // Draw trail
-      const grad = ctx.createLinearGradient(
-        s.x, s.y,
-        s.x - s.vx / Math.hypot(s.vx, s.vy) * s.len,
-        s.y - s.vy / Math.hypot(s.vx, s.vy) * s.len
-      );
-      grad.addColorStop(0, `rgba(255,255,255,${(s.alpha * 0.9).toFixed(3)})`);
-      grad.addColorStop(0.3, `rgba(255,255,255,${(s.alpha * 0.3).toFixed(3)})`);
-      grad.addColorStop(1, `rgba(255,255,255,0)`);
-
+      const spd = Math.hypot(s.vx, s.vy);
+      const nx = s.vx / spd, ny = s.vy / spd;
+      const grad = ctx.createLinearGradient(s.x, s.y, s.x - nx * s.len, s.y - ny * s.len);
+      grad.addColorStop(0,   `rgba(255,255,255,${(s.alpha * 0.95).toFixed(3)})`);
+      grad.addColorStop(0.25,`rgba(255,255,255,${(s.alpha * 0.4).toFixed(3)})`);
+      grad.addColorStop(1,   `rgba(255,255,255,0)`);
       ctx.beginPath();
       ctx.moveTo(s.x, s.y);
-      ctx.lineTo(
-        s.x - s.vx / Math.hypot(s.vx, s.vy) * s.len,
-        s.y - s.vy / Math.hypot(s.vx, s.vy) * s.len
-      );
+      ctx.lineTo(s.x - nx * s.len, s.y - ny * s.len);
       ctx.strokeStyle = grad;
-      ctx.lineWidth   = 1.5;
-      ctx.stroke();
+      ctx.lineWidth = 1.2; ctx.stroke();
 
-      // Bright head
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255,255,255,${s.alpha.toFixed(3)})`;
-      ctx.fill();
+      // Glow head
+      const hg = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, 4);
+      hg.addColorStop(0, `rgba(255,255,255,${s.alpha.toFixed(3)})`);
+      hg.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = hg; ctx.fill();
     }
-
     requestAnimationFrame(draw);
   }
   requestAnimationFrame(draw);
