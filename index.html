@@ -6,7 +6,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Bowlby+One&family=Geist+Mono:wght@300;400&display=swap" rel="stylesheet">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Globe Musical</title>
+<title>Carte Son</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Geist Mono', monospace; }
@@ -1306,7 +1306,7 @@ toggleEl.addEventListener('click', async () => {
         listEl.innerHTML = '<div class="vinyl-loading">aucun vinyle</div>';
       } else {
         listEl.innerHTML = vinyls.map(v => `
-          <div class="vinyl-item" data-url="${v.url}" title="Voir sur Discogs">
+          <div class="vinyl-item">
             <div class="vinyl-cover">
               ${v.cover ? `<img src="${v.cover}" loading="lazy"/>` : '<div class="vinyl-cover-placeholder">🖤</div>'}
             </div>
@@ -1316,6 +1316,7 @@ toggleEl.addEventListener('click', async () => {
               <div style="display:flex;justify-content:flex-end;align-items:center;gap:4px;margin-top:2px">
                 ${v.stars ? `<span style="font-size:9px;color:rgba(255,255,255,0.5);letter-spacing:1px">${'★'.repeat(v.stars)}${'☆'.repeat(5-v.stars)}</span>` : ''}
                 ${v.year ? `<span class="vinyl-year">${v.year}</span>` : ''}
+                ${v.releaseId ? `<a href="https://www.discogs.com/release/${v.releaseId}" target="_blank" style="font-size:9px;color:rgba(255,255,255,0.25);letter-spacing:0.05em;text-decoration:none;margin-left:4px;pointer-events:all" title="Voir sur Discogs">↗</a>` : ''}
               </div>
             </div>
           </div>`).join('');
