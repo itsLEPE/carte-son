@@ -1950,36 +1950,35 @@ async function getVinylsForCountry(countryName) {
   resize();
   window.addEventListener('resize', resize);
 
-  // 3 layers of stars — background (tiny/slow), mid, foreground (bigger/fast twinkle)
   function makeStar(layer) {
+    const r = layer === 0 ? Math.random() * 0.8 + 0.2
+            : layer === 1 ? Math.random() * 1.2 + 0.5
+            :               Math.random() * 2.2 + 0.8;
+    // Stars fully turn ON and OFF — min near 0, max near 1
+    const minA = layer === 0 ? 0.0  : layer === 1 ? 0.0  : 0.0;
+    const maxA = layer === 0 ? 0.55 : layer === 1 ? 0.85 : 1.0;
     return {
-      x:     Math.random() * window.innerWidth,
-      y:     Math.random() * window.innerHeight,
-      r:     layer === 0 ? Math.random() * 0.6 + 0.1
-           : layer === 1 ? Math.random() * 0.9 + 0.3
-           :               Math.random() * 1.4 + 0.5,
-      baseAlpha: layer === 0 ? Math.random() * 0.25 + 0.05
-               : layer === 1 ? Math.random() * 0.45 + 0.15
-               :               Math.random() * 0.7  + 0.2,
-      phase: Math.random() * Math.PI * 2,
-      // Twinkle speed — foreground stars twinkle fast, bg slow
-      twinkleSpeed: layer === 0 ? Math.random() * 0.006 + 0.001
-                  : layer === 1 ? Math.random() * 0.018 + 0.004
-                  :               Math.random() * 0.045 + 0.015,
-      // Drift — very slow parallax movement
-      vx: (Math.random() - 0.5) * (layer === 0 ? 0.015 : layer === 1 ? 0.03 : 0.06),
-      vy: (Math.random() - 0.5) * (layer === 0 ? 0.01  : layer === 1 ? 0.02 : 0.04),
-      // Pulse: some stars do a big brightness flash occasionally
-      pulseTimer: Math.random() * 400,
-      pulseInterval: 180 + Math.random() * 600,
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      r,
+      minA, maxA,
+      phase:        Math.random() * Math.PI * 2,
+      twinkleSpeed: layer === 0 ? Math.random() * 0.012 + 0.003
+                  : layer === 1 ? Math.random() * 0.03  + 0.01
+                  :               Math.random() * 0.07  + 0.03,
+      vx: (Math.random() - 0.5) * (layer === 0 ? 0.02 : layer === 1 ? 0.04 : 0.08),
+      vy: (Math.random() - 0.5) * (layer === 0 ? 0.015: layer === 1 ? 0.03 : 0.06),
+      // Big flash
+      pulseTimer:    Math.random() * 300,
+      pulseInterval: 120 + Math.random() * 400,
       pulsing: false, pulseLife: 0,
     };
   }
 
   const stars = [
-    ...Array.from({length: 300}, () => makeStar(0)), // bg
-    ...Array.from({length: 180}, () => makeStar(1)), // mid
-    ...Array.from({length: 70},  () => makeStar(2)), // fg
+    ...Array.from({length: 250}, () => makeStar(0)),
+    ...Array.from({length: 160}, () => makeStar(1)),
+    ...Array.from({length: 90},  () => makeStar(2)),
   ];
 
   // Shooting stars
@@ -2019,41 +2018,40 @@ async function getVinylsForCountry(countryName) {
     ctx.clearRect(0, 0, W, H);
 
     stars.forEach(s => {
-      // Twinkle
       s.phase += s.twinkleSpeed * dt;
-      let a = s.baseAlpha * (0.45 + 0.55 * Math.sin(s.phase));
+      // Full on/off: sin goes -1→1, map to minA→maxA
+      let t = (Math.sin(s.phase) + 1) / 2; // 0→1
+      let a = s.minA + t * (s.maxA - s.minA);
 
-      // Occasional pulse flash
+      // Big flash pulse
       s.pulseTimer += dt;
       if (!s.pulsing && s.pulseTimer > s.pulseInterval) {
         s.pulsing = true; s.pulseLife = 0; s.pulseTimer = 0;
       }
       if (s.pulsing) {
-        s.pulseLife += 0.06 * dt;
-        const pf = Math.sin(s.pulseLife * Math.PI); // 0→1→0
-        a = Math.min(1, a + pf * 0.8);
-        if (s.pulseLife >= 1) { s.pulsing = false; s.pulseInterval = 200 + Math.random() * 600; }
+        s.pulseLife += 0.045 * dt;
+        const pf = Math.sin(s.pulseLife * Math.PI);
+        a = Math.min(1, a + pf * 1.0); // full brightness flash
+        if (s.pulseLife >= 1) { s.pulsing = false; s.pulseInterval = 100 + Math.random() * 500; }
       }
 
       // Drift
       s.x += s.vx * dt;
       s.y += s.vy * dt;
-      if (s.x < -2) s.x = W + 2;
-      if (s.x > W + 2) s.x = -2;
-      if (s.y < -2) s.y = H + 2;
-      if (s.y > H + 2) s.y = -2;
+      if (s.x < -2) s.x = W + 2; if (s.x > W+2) s.x = -2;
+      if (s.y < -2) s.y = H + 2; if (s.y > H+2) s.y = -2;
 
-      // Draw — pulsing stars get a soft glow
-      if (s.pulsing && s.pulseLife < 1) {
-        const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r * 5);
-        glow.addColorStop(0, `rgba(255,255,255,${Math.min(0.9, a).toFixed(3)})`);
+      // Glow halo on bright stars
+      if (a > 0.5) {
+        const glowR = s.r * (3 + (a - 0.5) * 6);
+        const glow = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, glowR);
+        glow.addColorStop(0, `rgba(255,255,255,${(a * 0.4).toFixed(3)})`);
         glow.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.r * 5, 0, Math.PI * 2);
-        ctx.fillStyle = glow;
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(s.x, s.y, glowR, 0, Math.PI * 2);
+        ctx.fillStyle = glow; ctx.fill();
       }
 
+      // Core
       ctx.beginPath();
       ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(255,255,255,${Math.min(1, a).toFixed(3)})`;
