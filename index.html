@@ -43,7 +43,7 @@ html, body {
   caret-color: rgba(255,255,255,0.5);
 }
 #search-input::placeholder { color: rgba(255,255,255,0.18); letter-spacing: 0.08em; }
-#search-input:focus { border-bottom-color: rgba(255,255,255,0.5); }
+#search-input:focus { border-bottom-color: #C8102E; }
 #search-results {
   display: none; flex-direction: column;
   background: #0a0a0a;
@@ -58,7 +58,7 @@ html, body {
   font-size: 11px; color: rgba(255,255,255,0.6);
   font-family: 'Geist Mono', monospace; letter-spacing: 0.04em;
 }
-.search-item:hover { background: rgba(255,255,255,0.05); }
+.search-item:hover { background: rgba(200,16,46,0.08); border-left: 2px solid #C8102E; padding-left: 10px; }
 .search-item svg { border-radius: 2px; flex-shrink: 0; }
 .search-item-name {
   font-family: 'Bebas Neue', sans-serif;
@@ -90,13 +90,13 @@ html, body {
 }
 #zoom-thumb {
   position: absolute; left: 50%; transform: translateX(-50%);
-  width: 5px; height: 5px; border-radius: 50%;
-  background: #fff; cursor: grab; z-index: 2;
-  box-shadow: 0 0 0 3px rgba(255,255,255,0.08), 0 0 10px rgba(255,255,255,0.2);
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #C8102E; cursor: grab; z-index: 2;
+  box-shadow: 0 0 0 3px rgba(200,16,46,0.08), 0 0 10px rgba(200,16,46,0.15);
   transition: box-shadow 0.2s, transform 0.12s;
 }
 #zoom-thumb:hover {
-  box-shadow: 0 0 0 6px rgba(255,255,255,0.08), 0 0 14px rgba(255,255,255,0.3);
+  box-shadow: 0 0 0 6px rgba(200,16,46,0.08), 0 0 16px rgba(200,16,46,0.15);
 }
 #zoom-thumb.active {
   transform: translateX(-50%) scale(1.4);
@@ -129,7 +129,8 @@ html, body {
   z-index: 20; display: flex; align-items: center; gap: 8px;
   text-decoration: none; transition: opacity 0.2s;
 }
-#profile-link:hover { opacity: 0.5; }
+#profile-link:hover { opacity: 1; }
+#profile-link:hover #profile-avatar { border-color: #C8102E; }
 #profile-avatar {
   width: 26px; height: 26px; border-radius: 50%;
   background: rgba(255,255,255,0.06);
@@ -308,7 +309,7 @@ html, body {
   color: rgba(255,255,255,0.7); line-height: 1;
   transition: color 0.2s;
 }
-#completion:hover #completion-pct { color: rgba(255,255,255,0.95); }
+#completion:hover #completion-pct { color: #C8102E; }
 #completion-label {
   font-family: 'Geist Mono', monospace;
   font-size: 8px; letter-spacing: 0.14em; text-transform: uppercase;
@@ -320,7 +321,7 @@ html, body {
   margin-top: 6px; margin-left: auto; overflow: hidden;
 }
 #completion-fill {
-  height: 100%; background: rgba(255,255,255,0.4);
+  height: 100%; background: #C8102E;
   transition: width 0.8s cubic-bezier(0.16,1,0.3,1);
 }
 #completion-dropdown {
@@ -355,7 +356,7 @@ html, body {
 }
 .dropdown-item .di-dot {
   width: 4px; height: 4px; border-radius: 50%; flex-shrink: 0;
-  background: rgba(255,255,255,0.6);
+  background: #C8102E;
 }
 .dropdown-section {
   font-family: 'Geist Mono', monospace;
@@ -952,7 +953,7 @@ function buildGlobe(){
   svgEl.selectAll(".country").data(geoFeatures).enter()
     .append("path").attr("class","country")
     .attr("d",pathFn)
-    .attr("fill",d=>d.properties.name===selectedCountry?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.06)")
+    .attr("fill",d=>d.properties.name===selectedCountry?"rgba(200,16,46,0.6)":"rgba(255,255,255,0.06)")
     .attr("stroke","none").attr("stroke-width",0)
     .style("cursor","inherit")
     .on("mousemove",function(event,d){
@@ -966,7 +967,7 @@ function buildGlobe(){
     })
     .on("mouseleave",function(event,d){
       tooltipEl.style.display="none";
-      d3.select(this).attr("fill",d.properties.name===selectedCountry?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.06)");
+      d3.select(this).attr("fill",d.properties.name===selectedCountry?"rgba(200,16,46,0.6)":"rgba(255,255,255,0.06)");
     })
     .on("click",function(event,d){
       const n=d.properties.name;
@@ -1235,7 +1236,7 @@ getVinylsForCountry(name).then(v => {
       </div>`).join('');
   }
 }).catch(e => { console.error('Discogs error:', e); countEl.textContent='?'; });
-  svgEl.selectAll(".country").attr("fill",d=>d.properties.name===selectedCountry?"rgba(255,255,255,0.28)":"rgba(255,255,255,0.06)");
+  svgEl.selectAll(".country").attr("fill",d=>d.properties.name===selectedCountry?"rgba(200,16,46,0.6)":"rgba(255,255,255,0.06)");
 }
 
 fetch("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
