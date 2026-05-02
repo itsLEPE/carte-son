@@ -2131,9 +2131,8 @@ async function fetchDiscogsCollection() {
   let all = [], page = 1, pages = 1;
   while (page <= pages) {
     const apiUrl = `https://api.discogs.com/users/${DISCOGS_USER}/collection/folders/0/releases?token=${DISCOGS_TOKEN}&per_page=100&page=${page}`;
-    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}`);
-    const wrapper = await res.json();
-    const data = JSON.parse(wrapper.contents);
+    const res = await fetch(apiUrl, { headers: { "Authorization": `Discogs token=${DISCOGS_TOKEN}`, "User-Agent": "CarteSON/1.0" } });
+    const data = await res.json();
     pages = data.pagination.pages;
     all = all.concat(data.releases);
     page++;
