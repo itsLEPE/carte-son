@@ -925,6 +925,7 @@ const fillEl=document.getElementById("zoom-fill");
 const TRACK_H=280;
 
 let W,H,scale,minScale,maxScale;
+let globeCX,globeCY; // center of globe (offset left to account for right panel)
 let rotation=[-10,-48];
 let selectedCountry=null;
 let isDragging=false,lastX,lastY;
@@ -1072,18 +1073,21 @@ window.addEventListener("mouseup",()=>{sliderDragging=false;thumbEl.classList.re
 function buildGlobe(){
   W=container.clientWidth; H=container.clientHeight;
   minScale=Math.min(W,H)*0.40; maxScale=minScale*9;
+  // Offset center left for the 290px right panel, only when globe fits without clipping
+  globeCX = (W >= 2 * minScale + 290) ? Math.round((W - 290) / 2) : Math.round(W / 2);
+  globeCY = Math.round(H / 2);
   if(!scale)scale=minScale;
-  proj=d3.geoOrthographic().scale(scale).translate([W/2,H/2]).rotate(rotation).clipAngle(90);
+  proj=d3.geoOrthographic().scale(scale).translate([globeCX,globeCY]).rotate(rotation).clipAngle(90);
   pathFn=d3.geoPath().projection(proj);
   svgEl.selectAll("*").remove();
   svgEl.attr("viewBox",`0 0 ${W} ${H}`);
 
   svgEl.append("circle").attr("id","globe-ring")
-    .attr("cx",W/2).attr("cy",H/2).attr("r",scale+1)
+    .attr("cx",globeCX).attr("cy",globeCY).attr("r",scale+1)
     .attr("fill","none").attr("stroke","rgba(255,255,255,0.07)").attr("stroke-width",5);
 
   svgEl.append("circle").attr("id","ocean")
-    .attr("cx",W/2).attr("cy",H/2).attr("r",scale).attr("fill","#080808");
+    .attr("cx",globeCX).attr("cy",globeCY).attr("r",scale).attr("fill","#080808");
 
   svgEl.append("path").attr("id","grat")
     .datum(d3.geoGraticule()()).attr("d",pathFn)
@@ -1135,134 +1139,53 @@ function buildGlobe(){
     .attr("stroke-linejoin","round");
 
   svgEl.append("circle").attr("id","globe-border")
-    .attr("cx",W/2).attr("cy",H/2).attr("r",scale)
+    .attr("cx",globeCX).attr("cy",globeCY).attr("r",scale)
     .attr("fill","none").attr("stroke","rgba(255,255,255,0.22)").attr("stroke-width",0.8);
 
-  // City lights — population-weighted clusters, animated blinking
-  const lightsG = svgEl.append("g").attr("id","city-lights").attr("pointer-events","none");
+  // City lights — glow filter for aesthetic
+  const defs = svgEl.append("defs");
+  const glowFilter = defs.append("filter").attr("id","city-glow").attr("x","-80%").attr("y","-80%").attr("width","260%").attr("height","260%");
+  glowFilter.append("feGaussianBlur").attr("in","SourceGraphic").attr("stdDeviation","1.2").attr("result","blur");
+  const merge = glowFilter.append("feMerge");
+  merge.append("feMergeNode").attr("in","blur");
+  merge.append("feMergeNode").attr("in","SourceGraphic");
 
-  // Known dense population centers [lon, lat] per country
-  const POPULATION_CENTERS = {
-    "France":         [[ 2.35,48.85],[3.88,43.61],[5.37,43.3],[4.83,45.75],[-1.68,48.11],[0.34,46.58]],
-    "United Kingdom": [[-0.12,51.51],[-2.24,53.48],[-1.89,52.49],[-3.19,55.95],[-2.99,53.41]],
-    "Germany":        [[13.40,52.52],[9.99,53.55],[11.58,48.14],[6.96,50.94],[8.68,50.11]],
-    "Italy":          [[12.50,41.90],[9.19,45.46],[11.25,43.77],[14.27,40.85],[15.09,37.50]],
-    "Spain":          [[-3.70,40.42],[ 2.15,41.39],[-0.38,39.47],[-5.98,37.39],[-8.72,42.23]],
-    "Japan":          [[139.69,35.69],[135.50,34.69],[130.40,33.59],[141.35,43.06],[136.90,35.18]],
-    "United States":  [[-74.01,40.71],[-118.24,34.05],[-87.63,41.88],[-95.37,29.76],[-122.42,37.77],[-80.19,25.77],[-84.39,33.75]],
-    "Brazil":         [[-46.63,-23.55],[-43.17,-22.91],[-38.50,-12.97],[-34.88,-8.05],[-60.02,-3.10]],
-    "South Korea":    [[126.97,37.57],[129.07,35.18],[126.71,37.46],[128.60,35.87]],
-    "Belgium":        [[4.35,50.85],[4.40,51.21],[5.57,50.63]],
-    "Netherlands":    [[4.90,52.37],[4.48,51.92],[5.12,52.09]],
-    "Sweden":         [[18.07,59.33],[12.00,57.71],[17.62,59.86]],
-    "Norway":         [[10.75,59.91],[5.32,60.39]],
-    "Denmark":        [[12.57,55.68],[10.21,56.15]],
-    "Poland":         [[21.01,52.23],[18.67,50.29],[19.94,50.06]],
-    "Portugal":       [[-9.14,38.72],[-8.61,41.15]],
-    "Ireland":        [[-6.27,53.34],[-8.47,51.90]],
-    "Austria":        [[16.37,48.21],[14.29,48.31]],
-    "Switzerland":    [[8.54,47.38],[6.14,46.20],[7.44,46.95]],
-    "Luxembourg":     [[6.13,49.61]],
-    "Nigeria":        [[3.38,6.45],[7.04,9.06],[8.50,11.85]],
-    "South Africa":   [[18.42,-33.93],[28.04,-26.20],[30.86,-29.86]],
-    "Egypt":          [[31.24,30.06],[31.22,30.04],[29.36,30.58]],
-    "Morocco":        [[-7.59,33.57],[-5.00,34.03],[-8.01,31.63]],
-    "Kenya":          [[36.82,-1.29],[39.67,-4.05]],
-    "Ethiopia":       [[38.75,9.02],[39.47,13.50]],
-    "Colombia":       [[-74.07,4.71],[-75.56,6.24],[-76.52,3.87]],
-    "Argentina":      [[-58.38,-34.61],[-64.18,-31.42],[-68.84,-32.89]],
-    "Australia":      [[151.21,-33.87],[144.96,-37.81],[153.02,-27.47],[115.86,-31.95]],
-    "Canada":         [[-79.38,43.65],[-73.57,45.50],[-123.12,49.25],[-113.49,53.55]],
-    "Mexico":         [[-99.13,19.43],[-103.35,20.67],[-117.00,32.52],[-100.32,25.67]],
-    "Turkey":         [[28.97,41.01],[32.86,39.93],[27.14,38.42]],
-    "India":          [[77.21,28.61],[72.88,19.08],[88.36,22.57],[80.27,13.08],[72.84,21.17]],
-    "China":          [[116.41,39.90],[121.47,31.23],[113.26,23.13],[104.07,30.67],[120.15,30.25]],
-  };
+  const lightsG = svgEl.append("g").attr("id","city-lights").attr("pointer-events","none")
+    .attr("filter","url(#city-glow)");
 
   window._cityLights = [];
 
-  const litCountries = geoFeatures.filter(f => {
-    const n = f.properties.name;
-    return COUNTRIES[n] && (COUNTRIES[n].links.apple || COUNTRIES[n].links.soundcloud);
-  });
-
-  litCountries.forEach(f => {
-    const name = f.properties.name;
-    const centers = POPULATION_CENTERS[name];
-    const [[x0,y0],[x1,y1]] = d3.geoBounds(f);
-    const area = d3.geoArea(f);
-    const dots = [];
-
-    // 1. Dense clusters around known cities (if available)
-    if (centers) {
-      centers.forEach(([lon, lat]) => {
-        const clusterSize = 6 + Math.floor(Math.random() * 6);
-        for (let i = 0; i < clusterSize; i++) {
-          const spread = 0.4 + Math.random() * 0.8;
-          const clon = lon + (Math.random() - 0.5) * spread;
-          const clat = lat + (Math.random() - 0.5) * spread * 0.6;
-          if (!d3.geoContains(f, [clon, clat])) continue;
-          dots.push({
-            geo: [clon, clat],
-            r: Math.random() * 1.8 + 0.8,
-            baseAlpha: Math.random() * 0.4 + 0.5,
-            phase: Math.random() * Math.PI * 2,
-            speed: Math.random() * 0.06 + 0.02,
-          });
-        }
-      });
-    }
-
-    // 2. Sparse random dots across country
-    const sparse = Math.max(3, Math.min(15, Math.round(area * 600)));
-    let placed = 0, att = 0;
-    while (placed < sparse && att < sparse * 15) {
-      att++;
-      const lon = x0 + Math.random() * (x1 - x0);
-      const lat = y0 + Math.random() * (y1 - y0);
-      if (!d3.geoContains(f, [lon, lat])) continue;
-      dots.push({
-        geo: [lon, lat],
-        r: Math.random() * 1.2 + 0.4,
-        baseAlpha: Math.random() * 0.3 + 0.2,
-        phase: Math.random() * Math.PI * 2,
-        speed: Math.random() * 0.04 + 0.01,
-      });
-      placed++;
-    }
-
-    dots.forEach(d => {
-      const circle = lightsG.append("circle")
-        .attr("r", d.r)
-        .attr("fill", "#FF8C30")
-        .attr("class","city-dot")
-        .datum(d.geo)
-        .node();
-      d.el = circle;
-      window._cityLights.push(d);
-    });
-  });
-
-  // Animate city lights blinking
+  // Blink animation loop — reads _cityLights dynamically so async population works
   if (window._cityLightsRAF) cancelAnimationFrame(window._cityLightsRAF);
   (function blinkLights() {
     window._cityLights.forEach(d => {
       d.phase += d.speed;
       const t = (Math.sin(d.phase) + 1) / 2;
-      let a = d.baseAlpha * (0.15 + 0.85 * t);
-      if (d.boosted) a = Math.min(1, a * 2.2 + 0.3); // surge on hover
+      let a = d.baseAlpha * (0.08 + 0.92 * t);
+      if (d.boosted) a = Math.min(1, a * 2.2 + 0.3);
       d.el.setAttribute("fill-opacity", a.toFixed(3));
-      d.el.setAttribute("r", d.boosted ? (d.r * 1.6).toFixed(1) : d.r.toFixed(1));
+      d.el.setAttribute("r", d.boosted ? (d.r * 1.8).toFixed(1) : d.r.toFixed(1));
     });
     window._cityLightsRAF = requestAnimationFrame(blinkLights);
   })();
+
+  // Async: fetch Discogs collection → lit countries = countries with vinyls
+  const _lightsGNode = lightsG.node();
+  fetchDiscogsCollection().then(collection => {
+    if (!document.contains(_lightsGNode)) return; // globe was rebuilt
+    const litNames = new Set(
+      collection.map(r => normalizeCountry(r.basic_information.country || "")).filter(n => COUNTRIES[n])
+    );
+    const litFeatures = geoFeatures.filter(f => litNames.has(f.properties.name));
+    _populateCityLights(lightsG, litFeatures);
+  }).catch(() => {});
 
   setupInteraction();
   updateSliderUI(false);
 }
 
 function globeUpdate(){
-  proj.scale(scale).translate([W/2,H/2]).rotate(rotation);
+  proj.scale(scale).translate([globeCX,globeCY]).rotate(rotation);
   pathFn=d3.geoPath().projection(proj);
   svgEl.select("#ocean").attr("r",scale);
   svgEl.select("#globe-ring").attr("r",scale+1);
@@ -1278,6 +1201,123 @@ function globeUpdate(){
     const pt = proj(d); return pt ? pt[1] : -999;
   }).attr("display", d => {
     // Hide dots on far side of globe
+    const pt = proj(d); return pt ? null : "none";
+  });
+}
+
+// Known dense population centers [lon, lat] per country (for city light clustering)
+const POPULATION_CENTERS = {
+  "France":            [[ 2.35,48.85],[3.88,43.61],[5.37,43.3],[4.83,45.75],[-1.68,48.11],[0.34,46.58]],
+  "United Kingdom":    [[-0.12,51.51],[-2.24,53.48],[-1.89,52.49],[-3.19,55.95],[-2.99,53.41]],
+  "Germany":           [[13.40,52.52],[9.99,53.55],[11.58,48.14],[6.96,50.94],[8.68,50.11]],
+  "Italy":             [[12.50,41.90],[9.19,45.46],[11.25,43.77],[14.27,40.85],[15.09,37.50]],
+  "Spain":             [[-3.70,40.42],[ 2.15,41.39],[-0.38,39.47],[-5.98,37.39],[-8.72,42.23]],
+  "Japan":             [[139.69,35.69],[135.50,34.69],[130.40,33.59],[141.35,43.06],[136.90,35.18]],
+  "United States":     [[-74.01,40.71],[-118.24,34.05],[-87.63,41.88],[-95.37,29.76],[-122.42,37.77],[-80.19,25.77],[-84.39,33.75]],
+  "Brazil":            [[-46.63,-23.55],[-43.17,-22.91],[-38.50,-12.97],[-34.88,-8.05],[-60.02,-3.10]],
+  "South Korea":       [[126.97,37.57],[129.07,35.18],[126.71,37.46],[128.60,35.87]],
+  "Belgium":           [[4.35,50.85],[4.40,51.21],[5.57,50.63]],
+  "Netherlands":       [[4.90,52.37],[4.48,51.92],[5.12,52.09]],
+  "Sweden":            [[18.07,59.33],[12.00,57.71],[17.62,59.86]],
+  "Norway":            [[10.75,59.91],[5.32,60.39]],
+  "Denmark":           [[12.57,55.68],[10.21,56.15]],
+  "Poland":            [[21.01,52.23],[18.67,50.29],[19.94,50.06]],
+  "Portugal":          [[-9.14,38.72],[-8.61,41.15]],
+  "Ireland":           [[-6.27,53.34],[-8.47,51.90]],
+  "Austria":           [[16.37,48.21],[14.29,48.31]],
+  "Switzerland":       [[8.54,47.38],[6.14,46.20],[7.44,46.95]],
+  "Luxembourg":        [[6.13,49.61]],
+  "Nigeria":           [[3.38,6.45],[7.04,9.06],[8.50,11.85]],
+  "South Africa":      [[18.42,-33.93],[28.04,-26.20],[30.86,-29.86]],
+  "Egypt":             [[31.24,30.06],[29.36,30.58]],
+  "Morocco":           [[-7.59,33.57],[-5.00,34.03],[-8.01,31.63]],
+  "Kenya":             [[36.82,-1.29],[39.67,-4.05]],
+  "Ethiopia":          [[38.75,9.02],[39.47,13.50]],
+  "Colombia":          [[-74.07,4.71],[-75.56,6.24],[-76.52,3.87]],
+  "Argentina":         [[-58.38,-34.61],[-64.18,-31.42],[-68.84,-32.89]],
+  "Australia":         [[151.21,-33.87],[144.96,-37.81],[153.02,-27.47],[115.86,-31.95]],
+  "Canada":            [[-79.38,43.65],[-73.57,45.50],[-123.12,49.25],[-113.49,53.55]],
+  "Mexico":            [[-99.13,19.43],[-103.35,20.67],[-117.00,32.52],[-100.32,25.67]],
+  "Turkey":            [[28.97,41.01],[32.86,39.93],[27.14,38.42]],
+  "India":             [[77.21,28.61],[72.88,19.08],[88.36,22.57],[80.27,13.08],[72.84,21.17]],
+  "China":             [[116.41,39.90],[121.47,31.23],[113.26,23.13],[104.07,30.67],[120.15,30.25]],
+  "Greece":            [[23.73,37.98],[22.93,40.64]],
+  "Jamaica":           [[-76.79,17.99],[-77.30,18.01]],
+  "New Zealand":       [[174.76,-36.86],[172.63,-43.53]],
+  "Czech Republic":    [[14.43,50.07],[16.61,49.19]],
+  "Hungary":           [[19.04,47.50],[17.63,47.69]],
+  "Taiwan":            [[121.56,25.03],[120.30,22.62]],
+};
+
+// Warm white + amber palette for city lights
+const LIGHT_COLORS = ["#FFFDE0","#FFF5C0","#FFE8A0","#FFD980","#FFFDE0","#FFFDE0"];
+
+function _populateCityLights(lightsG, litFeatures) {
+  litFeatures.forEach(f => {
+    const name = f.properties.name;
+    const centers = POPULATION_CENTERS[name];
+    const [[x0,y0],[x1,y1]] = d3.geoBounds(f);
+    const area = d3.geoArea(f);
+    const dots = [];
+
+    // 1. Dense clusters around known cities
+    if (centers) {
+      centers.forEach(([lon, lat]) => {
+        const clusterSize = 4 + Math.floor(Math.random() * 5);
+        for (let i = 0; i < clusterSize; i++) {
+          const spread = 0.35 + Math.random() * 0.7;
+          const clon = lon + (Math.random() - 0.5) * spread;
+          const clat = lat + (Math.random() - 0.5) * spread * 0.6;
+          if (!d3.geoContains(f, [clon, clat])) continue;
+          dots.push({
+            geo: [clon, clat],
+            r: Math.random() * 1.4 + 0.5,
+            color: LIGHT_COLORS[Math.floor(Math.random() * LIGHT_COLORS.length)],
+            baseAlpha: Math.random() * 0.35 + 0.55,
+            phase: Math.random() * Math.PI * 2,
+            speed: Math.random() * 0.05 + 0.015,
+          });
+        }
+      });
+    }
+
+    // 2. Sparse random dots across country (fewer, more readable)
+    const sparse = Math.max(2, Math.min(10, Math.round(area * 450)));
+    let placed = 0, att = 0;
+    while (placed < sparse && att < sparse * 20) {
+      att++;
+      const lon = x0 + Math.random() * (x1 - x0);
+      const lat = y0 + Math.random() * (y1 - y0);
+      if (!d3.geoContains(f, [lon, lat])) continue;
+      dots.push({
+        geo: [lon, lat],
+        r: Math.random() * 0.9 + 0.3,
+        color: LIGHT_COLORS[Math.floor(Math.random() * LIGHT_COLORS.length)],
+        baseAlpha: Math.random() * 0.25 + 0.15,
+        phase: Math.random() * Math.PI * 2,
+        speed: Math.random() * 0.03 + 0.008,
+      });
+      placed++;
+    }
+
+    dots.forEach(d => {
+      const circle = lightsG.append("circle")
+        .attr("r", d.r)
+        .attr("fill", d.color)
+        .attr("class","city-dot")
+        .datum(d.geo)
+        .node();
+      d.el = circle;
+      window._cityLights.push(d);
+    });
+  });
+
+  // Initial projection pass so dots appear immediately
+  svgEl.select("#city-lights").selectAll(".city-dot").attr("cx", d => {
+    const pt = proj(d); return pt ? pt[0] : -999;
+  }).attr("cy", d => {
+    const pt = proj(d); return pt ? pt[1] : -999;
+  }).attr("display", d => {
     const pt = proj(d); return pt ? null : "none";
   });
 }
